@@ -13,58 +13,62 @@ export interface Project {
 
 export interface Task {
   id: string
-  projectId: string // New: Associate task with a project
+  projectId: string
   title: string
   description: string
   assignee: string
   dueDate: string
-  status: string // Changed to string for dynamic status columns
+  status: string
   priority: "low" | "medium" | "high"
   tags: string[]
-  githubLink?: string // Link to PR or commit
-  order: number // Added for internal sorting within columns
+  githubLink?: string
+  order: number
 }
 
 export interface StatusColumn {
   id: string
-  projectId: string // New: Associate column with a project
+  projectId: string
   title: string
   color: string
   order: number
 }
 
 interface DevTrackState {
-  projects: Project[] // New: List of projects
-  activeProjectId: string | null // New: Currently selected project
+  projects: Project[]
+  activeProjectId: string | null
   tasks: Task[]
-  statusColumns: StatusColumn[] // Added status columns
+  statusColumns: StatusColumn[]
   loading: boolean
 }
 
 type DevTrackAction =
-  | { type: "SET_PROJECTS"; payload: Project[] } // New action
-  | { type: "ADD_PROJECT"; payload: Project } // New action
-  | { type: "UPDATE_PROJECT"; payload: Project } // New action
-  | { type: "DELETE_PROJECT"; payload: string } // New action
-  | { type: "SET_ACTIVE_PROJECT"; payload: string | null } // New action
+  | { type: "SET_PROJECTS"; payload: Project[] }
+  | { type: "ADD_PROJECT"; payload: Project }
+  | { type: "UPDATE_PROJECT"; payload: Project }
+  | { type: "DELETE_PROJECT"; payload: string }
+  | { type: "SET_ACTIVE_PROJECT"; payload: string | null }
   | { type: "SET_TASKS"; payload: Task[] }
   | { type: "ADD_TASK"; payload: Task }
   | { type: "UPDATE_TASK"; payload: Task }
   | { type: "DELETE_TASK"; payload: string }
-  | { type: "MOVE_TASK"; payload: { id: string; status: string; overId?: string } } // Modified payload
-  | { type: "SET_STATUS_COLUMNS"; payload: StatusColumn[] } // New action
-  | { type: "ADD_STATUS_COLUMN"; payload: StatusColumn } // New action
-  | { type: "UPDATE_STATUS_COLUMN"; payload: StatusColumn } // New action
-  | { type: "DELETE_STATUS_COLUMN"; payload: string } // New action
-  | { type: "REORDER_STATUS_COLUMNS"; payload: StatusColumn[] } // New action
+  | { type: "MOVE_TASK"; payload: { id: string; status: string; overId?: string } }
+  | { type: "SET_STATUS_COLUMNS"; payload: StatusColumn[] }
+  | { type: "ADD_STATUS_COLUMN"; payload: StatusColumn }
+  | { type: "UPDATE_STATUS_COLUMN"; payload: StatusColumn }
+  | { type: "DELETE_STATUS_COLUMN"; payload: string }
+  | { type: "REORDER_STATUS_COLUMNS"; payload: StatusColumn[] }
   | { type: "SET_LOADING"; payload: boolean }
 
+// -----------------------
+// Initial State & Reducer
+// -----------------------
+
 const initialState: DevTrackState = {
-  projects: [], // Initialize empty
-  activeProjectId: null, // No active project initially
+  projects: [],
+  activeProjectId: null,
   tasks: [],
-  statusColumns: [], // Initialize empty
-  loading: true, // Start with loading true
+  statusColumns: [],
+  loading: true,
 }
 
 const devTrackReducer = (state: DevTrackState, action: DevTrackAction): DevTrackState => {
@@ -76,16 +80,15 @@ const devTrackReducer = (state: DevTrackState, action: DevTrackAction): DevTrack
     case "UPDATE_PROJECT":
       return {
         ...state,
-        projects: state.projects.map((project) => (project.id === action.payload.id ? action.payload : project)),
+        projects: state.projects.map(p => (p.id === action.payload.id ? action.payload : p)),
       }
     case "DELETE_PROJECT":
-      // Also delete associated tasks and status columns
       return {
         ...state,
-        projects: state.projects.filter((project) => project.id !== action.payload),
-        tasks: state.tasks.filter((task) => task.projectId !== action.payload),
-        statusColumns: state.statusColumns.filter((col) => col.projectId !== action.payload),
-        activeProjectId: state.activeProjectId === action.payload ? null : state.activeProjectId, // Clear active project if deleted
+        projects: state.projects.filter(p => p.id !== action.payload),
+        tasks: state.tasks.filter(t => t.projectId !== action.payload),
+        statusColumns: state.statusColumns.filter(c => c.projectId !== action.payload),
+        activeProjectId: state.activeProjectId === action.payload ? null : state.activeProjectId,
       }
     case "SET_ACTIVE_PROJECT":
       return { ...state, activeProjectId: action.payload }
@@ -96,53 +99,41 @@ const devTrackReducer = (state: DevTrackState, action: DevTrackAction): DevTrack
     case "UPDATE_TASK":
       return {
         ...state,
-        tasks: state.tasks.map((task) => (task.id === action.payload.id ? action.payload : task)),
+        tasks: state.tasks.map(t => (t.id === action.payload.id ? action.payload : t)),
       }
     case "DELETE_TASK":
       return {
         ...state,
-        tasks: state.tasks.filter((task) => task.id !== action.payload),
+        tasks: state.tasks.filter(t => t.id !== action.payload),
       }
     case "MOVE_TASK": {
       const { id, status: newStatus, overId } = action.payload
-      const activeTask = state.tasks.find((task) => task.id === id)
-
+      const activeTask = state.tasks.find(t => t.id === id)
       if (!activeTask) return state
 
-      // Create a new array of tasks, excluding the active task for now
-      const updatedTasks = state.tasks.filter((task) => task.id !== id)
-
-      // Update the status of the active task
+      const updatedTasks = state.tasks.filter(t => t.id !== id)
       const taskToMove = { ...activeTask, status: newStatus }
 
-      // Get tasks that will be in the target column (excluding the active task if it was already there)
       let targetColumnTasks = updatedTasks.filter(
-        (task) => task.status === newStatus && task.projectId === activeTask.projectId,
+        t => t.status === newStatus && t.projectId === activeTask.projectId,
       )
 
       if (overId) {
-        // Dropped on another task: insert at that position
-        const overIndex = targetColumnTasks.findIndex((task) => task.id === overId)
+        const overIndex = targetColumnTasks.findIndex(t => t.id === overId)
         if (overIndex !== -1) {
           targetColumnTasks.splice(overIndex, 0, taskToMove)
         } else {
           targetColumnTasks.push(taskToMove)
         }
       } else {
-        // Dropped on column itself (empty space): append to end
         targetColumnTasks.push(taskToMove)
       }
 
-      // Re-assign order property for tasks in the target column
-      targetColumnTasks = targetColumnTasks.map((task, index) => ({ ...task, order: index }))
-
-      // Combine all tasks: tasks not in target column + reordered target column tasks
+      targetColumnTasks = targetColumnTasks.map((t, i) => ({ ...t, order: i }))
       const otherTasks = updatedTasks.filter(
-        (task) => task.status !== newStatus || task.projectId !== activeTask.projectId,
+        t => t.status !== newStatus || t.projectId !== activeTask.projectId,
       )
-      const finalTasks = [...otherTasks, ...targetColumnTasks]
-
-      return { ...state, tasks: finalTasks }
+      return { ...state, tasks: [...otherTasks, ...targetColumnTasks] }
     }
     case "SET_STATUS_COLUMNS":
       return { ...state, statusColumns: action.payload }
@@ -154,21 +145,20 @@ const devTrackReducer = (state: DevTrackState, action: DevTrackAction): DevTrack
     case "UPDATE_STATUS_COLUMN":
       return {
         ...state,
-        statusColumns: state.statusColumns.map((col) => (col.id === action.payload.id ? action.payload : col)),
+        statusColumns: state.statusColumns.map(c => (c.id === action.payload.id ? action.payload : c)),
       }
     case "DELETE_STATUS_COLUMN":
       return {
         ...state,
-        statusColumns: state.statusColumns.filter((col) => col.id !== action.payload),
-        // Move tasks from deleted column to first available column within the same project
-        tasks: state.tasks.map((task) => {
-          if (task.status === action.payload) {
-            const firstAvailableColumn = state.statusColumns.find(
-              (col) => col.id !== action.payload && col.projectId === task.projectId,
+        statusColumns: state.statusColumns.filter(c => c.id !== action.payload),
+        tasks: state.tasks.map(t => {
+          if (t.status === action.payload) {
+            const fallback = state.statusColumns.find(
+              c => c.id !== action.payload && c.projectId === t.projectId,
             )
-            return { ...task, status: firstAvailableColumn?.id || "todo" } // Fallback to "todo" if no other column in project
+            return { ...t, status: fallback?.id || "todo" }
           }
-          return task
+          return t
         }),
       }
     case "REORDER_STATUS_COLUMNS":
@@ -182,23 +172,30 @@ const devTrackReducer = (state: DevTrackState, action: DevTrackAction): DevTrack
       return state
   }
 }
+// -----------------------
+// Context
+// -----------------------
 
 const DevTrackContext = createContext<{
   state: DevTrackState
   dispatch: React.Dispatch<DevTrackAction>
-  addProject: (project: Omit<Project, "id" | "createdAt">) => void // New function
-  updateProject: (project: Project) => void // New function
-  deleteProject: (id: string) => void // New function
-  setActiveProject: (id: string | null) => void // New function
+  addProject: (data: Omit<Project, "id" | "createdAt">) => void
+  updateProject: (project: Project) => void
+  deleteProject: (id: string) => void
+  setActiveProject: (id: string | null) => void
   addTask: (task: Omit<Task, "id" | "projectId">) => void
   updateTask: (task: Task) => void
   deleteTask: (id: string) => void
-  moveTask: (id: string, status: string, overId?: string) => void // Modified signature
-  addStatusColumn: (column: Omit<StatusColumn, "id" | "projectId">) => void // New function
-  updateStatusColumn: (column: StatusColumn) => void // New function
-  deleteStatusColumn: (id: string) => void // New function
-  reorderStatusColumns: (columns: StatusColumn[]) => void // New function
+  moveTask: (id: string, status: string, overId?: string) => void
+  addStatusColumn: (data: Omit<StatusColumn, "id" | "projectId">) => void
+  updateStatusColumn: (column: StatusColumn) => void
+  deleteStatusColumn: (id: string) => void
+  reorderStatusColumns: (columns: StatusColumn[]) => void
 } | null>(null)
+
+// -----------------------
+// Provider
+// -----------------------
 
 export function DevTrackProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(devTrackReducer, initialState)

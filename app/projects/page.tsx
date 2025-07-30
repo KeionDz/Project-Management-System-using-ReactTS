@@ -1,5 +1,6 @@
 "use client"
 
+import { toast } from "@/components/ui/use-toast"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Navigation } from "@/components/navigation"
@@ -63,25 +64,83 @@ export default function ProjectsPage() {
   }
 
   const handleDeleteProject = async (projectId: string) => {
-    await fetch(`/api/projects/${projectId}`, { method: "DELETE" })
-    setProjects((prev) => prev.filter((p) => p.id !== projectId))
+    const project = projects.find((p) => p.id === projectId)
+    const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" })
+
+    if (res.ok) {
+      setProjects((prev) => prev.filter((p) => p.id !== projectId))
+      toast({
+        title: "Project Deleted",
+        description: `"${project?.name}" has been deleted.`,
+      })
+    } else {
+      const error = await res.json()
+      console.error("❌ Failed to delete project:", error)
+      toast({
+        title: "Failed to Delete Project",
+        description: error.error || "An unknown error occurred.",
+        variant: "destructive",
+      })
+    }
   }
 
-  const handleSaveProject = (projectData: Partial<Project>) => {
-    setProjects((prev) => {
-      const existing = prev.find((p) => p.id === projectData.id)
-      if (existing) {
-        // Update existing
-        return prev.map((p) =>
-          p.id === projectData.id ? { ...p, ...projectData } as Project : p
-        )
-      } else {
-        // Add new
-        return [...prev, projectData as Project]
-      }
-    })
+  const handleSaveProject = async (projectData: Partial<Project>) => {
+    try {
+      let savedProject: Project
 
-    setEditingProject(null)
+      if (projectData.id) {
+        // Edit existing project
+        const res = await fetch(`/api/projects/${projectData.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: projectData.name,
+            description: projectData.description,
+          }),
+        })
+
+        if (!res.ok) throw new Error("Failed to update project.")
+        savedProject = await res.json()
+
+        toast({
+          title: "Project Updated",
+          description: `"${savedProject.name}" has been updated.`,
+        })
+      } else {
+        // Create new project
+        const res = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(projectData),
+        })
+
+        if (!res.ok) throw new Error("Failed to create project.")
+        savedProject = await res.json()
+
+        toast({
+          title: "Project Created",
+          description: `"${savedProject.name}" has been created.`,
+        })
+      }
+
+      // Update UI
+      setProjects((prev) => {
+        const exists = prev.find((p) => p.id === savedProject.id)
+        return exists
+          ? prev.map((p) => (p.id === savedProject.id ? savedProject : p))
+          : [...prev, savedProject]
+      })
+
+      setEditingProject(null)
+      setShowProjectDialog(false)
+    } catch (err) {
+      console.error("❌ Save error:", err)
+      toast({
+        title: "Failed to Save Project",
+        description: "There was a problem saving the project.",
+        variant: "destructive",
+      })
+    }
   }
 
   return (

@@ -34,7 +34,7 @@ export function Navigation() {
             <div className="bg-white/20 p-2 rounded-lg backdrop-blur-sm">
               <Zap className="h-6 w-6" />
             </div>
-            <span className="text-xl font-bold">DevTrack</span>
+            <span className="text-xl font-bold">Telsys DevTrack</span>
           </Link>
 
           {/* Navigation Links */}
