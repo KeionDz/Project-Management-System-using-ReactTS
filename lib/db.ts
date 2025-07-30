@@ -1,15 +1,16 @@
 import { PrismaClient } from '@/lib/generated/prisma'
 
-const prismaClientSingleton = () => {
-    return new PrismaClient()
-}
-
 declare global {
-    var prismaGlobal: undefined | ReturnType<typeof prismaClientSingleton>
+  // Prevent TypeScript error about `globalThis` type
+  var prismaGlobal: PrismaClient | undefined
 }
 
-const prisma = globalThis.prismaGlobal ?? prismaClientSingleton()
+const prisma =
+  globalThis.prismaGlobal ??
+  new PrismaClient()
+
+if (process.env.NODE_ENV !== 'production') {
+  globalThis.prismaGlobal = prisma
+}
 
 export default prisma
-
-if (process.env.NODE_ENV !== 'production') globalThis.prismaGlobal = prisma;
