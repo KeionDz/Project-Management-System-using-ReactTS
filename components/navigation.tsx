@@ -15,8 +15,7 @@ export function Navigation() {
   const pathname = usePathname()
 
   const navItems = [
-    { href: "/projects", label: "Projects", icon: FolderKanban },
-    { href: "/board", label: "Board", icon: LayoutDashboard },
+    { href: "/projects", label: "Projects", icon: FolderKanban }
   ]
 
   const handleLogout = () => {

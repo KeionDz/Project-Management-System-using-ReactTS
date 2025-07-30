@@ -1,6 +1,5 @@
 "use client"
 
-import type React from "react"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
@@ -19,15 +18,21 @@ import type { Project } from "@/components/devtrack-provider"
 interface ProjectDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  project?: Project | null // Optional project for editing
+  project?: Project | null // If present, editing; otherwise, creating
   onSave: (projectData: Omit<Project, "id" | "createdAt"> | Project) => void
 }
 
-export function ProjectDialog({ open, onOpenChange, project, onSave }: ProjectDialogProps) {
+export function ProjectDialog({
+  open,
+  onOpenChange,
+  project,
+  onSave,
+}: ProjectDialogProps) {
   const [formData, setFormData] = useState({
     name: "",
     description: "",
   })
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
     if (project) {
@@ -41,18 +46,42 @@ export function ProjectDialog({ open, onOpenChange, project, onSave }: ProjectDi
         description: "",
       })
     }
-  }, [project, open]) // Reset form when dialog opens or project changes
+  }, [project, open])
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (project) {
-      // Editing existing project
-      onSave({ ...project, ...formData })
-    } else {
-      // Adding new project
-      onSave(formData)
+  // 🔧 This sends a POST request to create a new project
+  async function createProject(data: { name: string; description: string }) {
+    const res = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+
+    if (!res.ok) {
+      throw new Error("Failed to create project")
     }
-    onOpenChange(false)
+
+    return await res.json()
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!formData.name.trim()) return
+
+    setIsSubmitting(true)
+    try {
+      if (project) {
+        await onSave({ ...project, ...formData }) // Optional: handle edits if supported
+      } else {
+        const created = await createProject(formData)
+        await onSave(created)
+      }
+      onOpenChange(false)
+    } catch (err) {
+      console.error("Project creation failed:", err)
+      alert("Failed to create project.")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -61,7 +90,9 @@ export function ProjectDialog({ open, onOpenChange, project, onSave }: ProjectDi
         <DialogHeader>
           <DialogTitle>{project ? "Edit Project" : "Create New Project"}</DialogTitle>
           <DialogDescription>
-            {project ? "Update the details of your project." : "Enter the details for your new project."}
+            {project
+              ? "Update the details of your project."
+              : "Enter the details for your new project."}
           </DialogDescription>
         </DialogHeader>
 
@@ -71,9 +102,12 @@ export function ProjectDialog({ open, onOpenChange, project, onSave }: ProjectDi
             <Input
               id="name"
               value={formData.name}
-              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, name: e.target.value }))
+              }
               placeholder="e.g., Website Redesign"
               required
+              disabled={isSubmitting}
             />
           </div>
 
@@ -82,17 +116,36 @@ export function ProjectDialog({ open, onOpenChange, project, onSave }: ProjectDi
             <Textarea
               id="description"
               value={formData.description}
-              onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  description: e.target.value,
+                }))
+              }
               placeholder="A brief overview of the project goals."
               rows={3}
+              disabled={isSubmitting}
             />
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isSubmitting}
+            >
               Cancel
             </Button>
-            <Button type="submit">{project ? "Save Changes" : "Create Project"}</Button>
+            <Button type="submit" disabled={!formData.name || isSubmitting}>
+              {isSubmitting
+                ? project
+                  ? "Saving..."
+                  : "Creating..."
+                : project
+                ? "Save Changes"
+                : "Create Project"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
