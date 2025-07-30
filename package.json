@@ -7,7 +7,7 @@
     "dev": "next dev",
     "lint": "next lint",
     "start": "next start",
-    "postinstall": "prisma generate"
+    "postinstall": "if [ \"$VERCEL\" != \"1\" ]; then prisma generate; fi"
   },
   "dependencies": {
     "@dnd-kit/core": "latest",
