@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
+import { useParams, useRouter } from "next/navigation"
 import {
   DndContext,
   type DragEndEvent,
@@ -26,8 +26,11 @@ import { useDraggableScroll } from "@/hooks/use-draggable-scroll"
 import { cn } from "@/lib/utils"
 
 export default function KanbanBoardPage() {
-  const { state, moveTask, updateTask, reorderStatusColumns } = useDevTrack()
+  const { state, setActiveProjectId, moveTask, updateTask, reorderStatusColumns } = useDevTrack()
   const router = useRouter()
+  const params = useParams<{ projectId: string }>()
+  const projectId = params.projectId
+
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null)
@@ -37,102 +40,80 @@ export default function KanbanBoardPage() {
   const [isReorderingColumns, setIsReorderingColumns] = useState(false)
   const [overIdForPlaceholder, setOverIdForPlaceholder] = useState<string | null>(null)
 
-  // Redirect to projects page if no active project is selected
+  // Load project from route and set it in state
   useEffect(() => {
-    if (!state.activeProjectId) {
+    if (!projectId || !state.projects.length) return
+
+    const projectExists = state.projects.some(p => p.id === projectId)
+    if (projectExists) {
+      setActiveProjectId(projectId)
+    } else {
       router.replace("/projects")
     }
-  }, [state.activeProjectId, router])
+  }, [projectId, state.projects, setActiveProjectId, router])
 
-  // Filter tasks and columns for the active project
-  const currentProjectTasks = state.tasks.filter((task) => task.projectId === state.activeProjectId)
-  const currentProjectColumns = state.statusColumns.filter((col) => col.projectId === state.activeProjectId)
+  const currentProjectTasks = state.tasks.filter(t => t.projectId === state.activeProjectId)
+  const currentProjectColumns = state.statusColumns.filter(c => c.projectId === state.activeProjectId)
 
-  // Determine if dnd-kit is currently dragging any item
   const isDndDragging = !!activeDragItem || !!activeColumn
-
-  // Initialize the useDraggableScroll hook, disabling it when dnd-kit is active
   const { scrollRef, onMouseDown, isDragging: isScrolling } = useDraggableScroll<HTMLDivElement>(isDndDragging)
 
   const handleDragStart = (event: DragStartEvent) => {
-    const { active } = event
-    const activeId = active.id as string
-
-    const task = currentProjectTasks.find((t) => t.id === activeId)
+    const activeId = event.active.id as string
+    const task = currentProjectTasks.find(t => t.id === activeId)
     if (task) {
       setActiveDragItem(task)
       return
     }
 
     if (isReorderingColumns) {
-      const column = currentProjectColumns.find((c) => c.id === activeId)
-      if (column) {
-        setActiveColumn(column)
-      }
+      const column = currentProjectColumns.find(c => c.id === activeId)
+      if (column) setActiveColumn(column)
     }
   }
 
   const handleDragOver = (event: DragOverEvent) => {
-    const { active, over } = event
-
-    if (active.data.current?.type === "task") {
-      if (over) {
-        setOverIdForPlaceholder(over.id as string)
-      } else {
-        setOverIdForPlaceholder(null)
-      }
-    }
+    const overId = event.over?.id as string | undefined
+    setOverIdForPlaceholder(overId || null)
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
+    const activeId = event.active.id as string
+    const overId = event.over?.id as string | undefined
 
     setOverIdForPlaceholder(null)
 
-    if (!over) {
+    if (!overId) {
       setActiveDragItem(null)
       setActiveColumn(null)
       return
     }
 
-    const activeId = active.id as string
-    const overId = over.id as string
-
-    // Handle column reordering
     if (activeColumn) {
-      const oldIndex = currentProjectColumns.findIndex((col) => col.id === activeId)
-      const newIndex = currentProjectColumns.findIndex((col) => col.id === overId)
-
+      const oldIndex = currentProjectColumns.findIndex(c => c.id === activeId)
+      const newIndex = currentProjectColumns.findIndex(c => c.id === overId)
       if (oldIndex !== newIndex) {
-        const reorderedColumns = arrayMove(currentProjectColumns, oldIndex, newIndex)
-        reorderStatusColumns(reorderedColumns)
+        const reordered = arrayMove(currentProjectColumns, oldIndex, newIndex)
+        reorderStatusColumns(reordered)
       }
     }
 
-    // Handle task movement/reordering
     if (activeDragItem) {
-      let newStatusColumnId: string | undefined
-      let targetOverId: string | undefined = undefined
+      let newStatusId: string | undefined
+      let targetTaskId: string | undefined
 
-      if (over.data.current?.type === "task") {
-        const overTask = currentProjectTasks.find((t) => t.id === over.id)
+      if (event.over?.data.current?.type === "task") {
+        const overTask = currentProjectTasks.find(t => t.id === overId)
         if (overTask) {
-          newStatusColumnId = overTask.status
-          targetOverId = over.id
+          newStatusId = overTask.status
+          targetTaskId = overId
         }
-      } else if (over.data.current?.type === "column") {
-        newStatusColumnId = over.id
-        targetOverId = undefined
+      } else if (event.over?.data.current?.type === "column") {
+        newStatusId = overId
       }
 
-      if (!newStatusColumnId) {
-        setActiveDragItem(null)
-        setActiveColumn(null)
-        return
-      }
-
-      if (activeDragItem.status !== newStatusColumnId || targetOverId) {
-        moveTask(activeId, newStatusColumnId, targetOverId)
+      if (newStatusId && (activeDragItem.status !== newStatusId || targetTaskId)) {
+        moveTask(activeId, newStatusId, targetTaskId)
       }
     }
 
@@ -145,24 +126,28 @@ export default function KanbanBoardPage() {
     setShowEditDialog(true)
   }
 
-  const getTasksByStatus = (status: string) => {
-    return currentProjectTasks.filter((task) => task.status === status).sort((a, b) => (a.order || 0) - (b.order || 0))
-  }
+  const getTasksByStatus = (status: string) =>
+    currentProjectTasks
+      .filter(t => t.status === status)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
 
   const sortedColumns = [...currentProjectColumns].sort((a, b) => a.order - b.order)
+  const enableHorizontalScroll = sortedColumns.length >= 6
 
-  const enableHorizontalScroll = currentProjectColumns.length >= 6
-
-  // Render a loading state or redirect if no active project
-  if (!state.activeProjectId) {
+  if (!state.activeProjectId || !state.projects.length) {
     return (
       <ProtectedRoute>
         <div className="min-h-screen bg-background flex items-center justify-center">
-          <p className="text-muted-foreground">Redirecting to projects...</p>
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading board...</p>
+          </div>
         </div>
       </ProtectedRoute>
     )
   }
+
+  const activeProject = state.projects.find(p => p.id === state.activeProjectId)
 
   return (
     <ProtectedRoute>
@@ -172,8 +157,7 @@ export default function KanbanBoardPage() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold">
-                Kanban Board for{" "}
-                {state.projects.find((p) => p.id === state.activeProjectId)?.name || "Selected Project"}
+                Board for Telsys {activeProject?.name || "Project"}
               </h1>
               <p className="text-muted-foreground">Organize your tasks with drag and drop.</p>
             </div>
@@ -195,6 +179,7 @@ export default function KanbanBoardPage() {
               </Button>
             </div>
           </div>
+
           <DndContext
             collisionDetection={rectIntersection}
             onDragStart={handleDragStart}
@@ -210,21 +195,21 @@ export default function KanbanBoardPage() {
                 !isDndDragging && (isScrolling ? "cursor-grabbing" : "cursor-grab"),
               )}
             >
-              <SortableContext items={sortedColumns.map((col) => col.id)} strategy={horizontalListSortingStrategy}>
-                {sortedColumns.map((column) => {
-                  const tasks = getTasksByStatus(column.id)
-                  return (
-                    <SortableStatusColumn
-                      key={column.id}
-                      column={column}
-                      tasks={tasks}
-                      isReorderingColumns={isReorderingColumns}
-                      onTaskEdit={handleEditTask}
-                      activeDragItem={activeDragItem}
-                      overIdForPlaceholder={overIdForPlaceholder}
-                    />
-                  )
-                })}
+              <SortableContext
+                items={sortedColumns.map(c => c.id)}
+                strategy={horizontalListSortingStrategy}
+              >
+                {sortedColumns.map(column => (
+                  <SortableStatusColumn
+                    key={column.id}
+                    column={column}
+                    tasks={getTasksByStatus(column.id)}
+                    isReorderingColumns={isReorderingColumns}
+                    onTaskEdit={handleEditTask}
+                    activeDragItem={activeDragItem}
+                    overIdForPlaceholder={overIdForPlaceholder}
+                  />
+                ))}
               </SortableContext>
             </div>
 
@@ -242,6 +227,7 @@ export default function KanbanBoardPage() {
               ) : null}
             </DragOverlay>
           </DndContext>
+
           <AddTaskDialog open={showAddDialog} onOpenChange={setShowAddDialog} />
           <AddStatusDialog open={showAddStatusDialog} onOpenChange={setShowAddStatusDialog} />
           <EditTaskDialog
