@@ -174,7 +174,7 @@ export default function LoginPage() {
         </Card>
 
         <div className="text-center mt-6 text-sm text-muted-foreground">
-          <p>© 2024 DevTrack. Built with Next.js and shadcn/ui.</p>
+          <p>© 2025 Telsys DevTrack. Built with Next.js and react.js.</p>
         </div>
       </div>
     </div>
