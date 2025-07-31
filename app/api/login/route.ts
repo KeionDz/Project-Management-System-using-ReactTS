@@ -12,7 +12,14 @@ const loginSchema = z.object({
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { email, password } = loginSchema.parse(body)
+
+    // Use safeParse to avoid exposing raw Zod error objects
+    const parsed = loginSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Incorrect password" }, { status: 401 })
+    }
+
+    const { email, password } = parsed.data
 
     // Find user in database
     const user = await prisma.user.findUnique({ where: { email } })
@@ -26,7 +33,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Incorrect password" }, { status: 401 })
     }
 
-    // ✅ Return wrapped in `user` object to match your AuthProvider
+    // ✅ Return wrapped in `user` object to match AuthProvider
     return NextResponse.json(
       {
         user: {
@@ -38,14 +45,11 @@ export async function POST(req: Request) {
       { status: 200 }
     )
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 400 })
+    return NextResponse.json({ error: "Login failed" }, { status: 400 })
   }
 }
 
-// Optional: Handle GET to prevent 405 spam
+// Optional: Handle GET to prevent 405 spam in logs
 export async function GET() {
-  return NextResponse.json(
-    { message: "Use POST to log in." },
-    { status: 405 }
-  )
+  return NextResponse.json({ message: "Use POST to log in." }, { status: 405 })
 }
