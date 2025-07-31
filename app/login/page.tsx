@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Zap, Mail, Lock, User } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
+import { toast } from "@/components/ui/use-toast"
 
 export default function LoginPage() {
   const { state, login, register } = useAuth()
@@ -28,18 +29,16 @@ export default function LoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     const success = await login(loginForm.email, loginForm.password)
-    if (success) {
-      router.push("/projects")
-    }
+    if (success) router.push("/projects")
   }
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     const success = await register(registerForm.email, registerForm.password, registerForm.name)
-    if (success) {
-      router.push("/projects")
-    }
+    if (success) router.push("/projects")
   }
+
+
 
   // Show loading state while checking authentication
   if (state.loading) {

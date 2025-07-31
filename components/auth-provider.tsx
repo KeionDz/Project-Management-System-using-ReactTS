@@ -1,7 +1,6 @@
 "use client"
 
-import type React from "react"
-import { createContext, useContext, useReducer, useEffect } from "react"
+import React, { createContext, useContext, useReducer, useEffect } from "react"
 import { useToast } from "@/hooks/use-toast"
 
 export interface User {
@@ -17,35 +16,25 @@ interface AuthState {
   loading: boolean
 }
 
-type AuthAction = { type: "SET_USER"; payload: User } | { type: "LOGOUT" } | { type: "SET_LOADING"; payload: boolean }
+type AuthAction =
+  | { type: "SET_USER"; payload: User }
+  | { type: "LOGOUT" }
+  | { type: "SET_LOADING"; payload: boolean }
 
 const initialState: AuthState = {
   user: null,
   isAuthenticated: false,
-  loading: true, // Start with loading true to check for existing session
+  loading: true,
 }
 
 const authReducer = (state: AuthState, action: AuthAction): AuthState => {
   switch (action.type) {
     case "SET_USER":
-      return {
-        ...state,
-        user: action.payload,
-        isAuthenticated: true,
-        loading: false,
-      }
+      return { ...state, user: action.payload, isAuthenticated: true, loading: false }
     case "LOGOUT":
-      return {
-        ...state,
-        user: null,
-        isAuthenticated: false,
-        loading: false,
-      }
+      return { ...state, user: null, isAuthenticated: false, loading: false }
     case "SET_LOADING":
-      return {
-        ...state,
-        loading: action.payload,
-      }
+      return { ...state, loading: action.payload }
     default:
       return state
   }
@@ -62,78 +51,98 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState)
   const { toast } = useToast()
 
-  // Check for existing session on mount
   useEffect(() => {
-    const checkSession = () => {
-      const storedUser = localStorage.getItem("devtrack_user")
-      if (storedUser) {
-        try {
-          const user = JSON.parse(storedUser)
-          dispatch({ type: "SET_USER", payload: user })
-        } catch (error) {
-          localStorage.removeItem("devtrack_user")
-          dispatch({ type: "SET_LOADING", payload: false })
-        }
-      } else {
+    const storedUser = localStorage.getItem("devtrack_user")
+    if (storedUser) {
+      try {
+        const user = JSON.parse(storedUser)
+        dispatch({ type: "SET_USER", payload: user })
+      } catch {
+        localStorage.removeItem("devtrack_user")
         dispatch({ type: "SET_LOADING", payload: false })
       }
+    } else {
+      dispatch({ type: "SET_LOADING", payload: false })
     }
-
-    checkSession()
   }, [])
 
   const login = async (email: string, password: string): Promise<boolean> => {
     dispatch({ type: "SET_LOADING", payload: true })
 
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      })
 
-    // Simple validation - in a real app, this would be an API call
-    if (email && password.length >= 6) {
-      const user: User = {
-        id: Date.now().toString(),
-        email,
-        name: email.split("@")[0], // Use email prefix as name
-        avatar: `/placeholder.svg?height=32&width=32&text=${email.charAt(0).toUpperCase()}`,
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || "Login failed")
       }
 
-      // Store user in localStorage (in a real app, this would be handled by secure tokens)
+      const user: User = {
+        id: data.user.id,
+        email: data.user.email,
+        name: data.user.name,
+        avatar: `/placeholder.svg?height=32&width=32&text=${data.user.name.charAt(0).toUpperCase()}`,
+      }
+
       localStorage.setItem("devtrack_user", JSON.stringify(user))
       dispatch({ type: "SET_USER", payload: user })
 
       toast({
         title: "Welcome back!",
-        description: `Successfully logged in as ${user.name}`,
+        description: `Logged in as ${user.name}`,
       })
 
       return true
-    } else {
-      dispatch({ type: "SET_LOADING", payload: false })
+    } catch (error: any) {
       toast({
         title: "Login Failed",
-        description: "Invalid email or password. Password must be at least 6 characters.",
+        description: error.message || "Invalid credentials",
         variant: "destructive",
       })
       return false
+    } finally {
+      dispatch({ type: "SET_LOADING", payload: false })
     }
   }
 
   const register = async (email: string, password: string, name: string): Promise<boolean> => {
     dispatch({ type: "SET_LOADING", payload: true })
 
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    if (!email || password.length < 6 || !name.trim()) {
+      toast({
+        title: "Registration Failed",
+        description: "Fill in all fields. Password must be at least 6 characters.",
+        variant: "destructive",
+      })
+      dispatch({ type: "SET_LOADING", payload: false })
+      return false
+    }
 
-    // Simple validation - in a real app, this would be an API call
-    if (email && password.length >= 6 && name.trim()) {
-      const user: User = {
-        id: Date.now().toString(),
-        email,
-        name: name.trim(),
-        avatar: `/placeholder.svg?height=32&width=32&text=${name.charAt(0).toUpperCase()}`,
+    try {
+      const res = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || "Registration failed")
       }
 
-      // Store user in localStorage (in a real app, this would be handled by secure tokens)
+      const user: User = {
+        id: data.user.id,
+        email: data.user.email,
+        name: data.user.name,
+        avatar: `/placeholder.svg?height=32&width=32&text=${data.user.name.charAt(0).toUpperCase()}`,
+      }
+
       localStorage.setItem("devtrack_user", JSON.stringify(user))
       dispatch({ type: "SET_USER", payload: user })
 
@@ -143,14 +152,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
 
       return true
-    } else {
-      dispatch({ type: "SET_LOADING", payload: false })
+    } catch (error: any) {
       toast({
         title: "Registration Failed",
-        description: "Please fill in all fields. Password must be at least 6 characters.",
+        description: error.message || "Something went wrong.",
         variant: "destructive",
       })
       return false
+    } finally {
+      dispatch({ type: "SET_LOADING", payload: false })
     }
   }
 
@@ -164,14 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider
-      value={{
-        state,
-        login,
-        register,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={{ state, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   )
