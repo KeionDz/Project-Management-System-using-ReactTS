@@ -1,6 +1,6 @@
 // app/api/login/route.ts
 import { NextResponse } from "next/server"
-import { compare } from "bcryptjs"
+import bcrypt from "bcryptjs"
 import prisma from "@/lib/db"
 import { z } from "zod"
 
@@ -13,43 +13,45 @@ export async function POST(req: Request) {
   try {
     const body = await req.json()
 
-    // Use safeParse to avoid exposing raw Zod error objects
+    // ✅ Validate body
     const parsed = loginSchema.safeParse(body)
     if (!parsed.success) {
-      return NextResponse.json({ error: "Incorrect password" }, { status: 401 })
+      return NextResponse.json({ error: "Invalid input." }, { status: 400 })
     }
 
     const { email, password } = parsed.data
 
-    // Find user in database
-    const user = await prisma.user.findUnique({ where: { email } })
+    // ✅ Include role for AuthProvider
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, name: true, email: true, password: true, role: true },
+    })
+
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    // Compare password hash
-    const passwordMatch = await compare(password, user.password)
-    if (!passwordMatch) {
-      return NextResponse.json({ error: "Incorrect password" }, { status: 401 })
+    const validPassword = await bcrypt.compare(password, user.password)
+    if (!validPassword) {
+      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 })
     }
 
-    // ✅ Return wrapped in `user` object to match AuthProvider
-    return NextResponse.json(
-      {
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-        },
+    // ✅ Return user without password
+    return NextResponse.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role, // ✅ Fallback to USER if somehow null
       },
-      { status: 200 }
-    )
-  } catch (err: any) {
-    return NextResponse.json({ error: "Login failed" }, { status: 400 })
+    })
+  } catch (error) {
+    console.error("❌ Login error:", error)
+    return NextResponse.json({ error: "Login failed" }, { status: 500 })
   }
 }
 
-// Optional: Handle GET to prevent 405 spam in logs
+// Optional GET handler to avoid 405 errors
 export async function GET() {
   return NextResponse.json({ message: "Use POST to log in." }, { status: 405 })
 }

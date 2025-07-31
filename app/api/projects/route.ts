@@ -16,10 +16,16 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { name, description } = body
+    const { name, description, userId } = body
 
     if (!name?.trim()) {
       return NextResponse.json({ error: "Project name is required." }, { status: 400 })
+    }
+
+    // ✅ Check if the user is admin
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user || user.role !== "ADMIN") {
+      return NextResponse.json({ error: "Only admins can create projects." }, { status: 403 })
     }
 
     const project = await prisma.project.create({

@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { Project } from "@/components/devtrack-provider"
+import { useAuth } from "@/components/auth-provider" // ✅ Import auth
 
 interface ProjectDialogProps {
   open: boolean
@@ -28,11 +29,11 @@ export function ProjectDialog({
   project,
   onSave,
 }: ProjectDialogProps) {
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-  })
+  const [formData, setFormData] = useState({ name: "", description: "" })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const { state: { user } } = useAuth() // ✅ Get logged-in user
+
+  const isAdmin = user?.role === "ADMIN"
 
   useEffect(() => {
     if (project) {
@@ -41,16 +42,13 @@ export function ProjectDialog({
         description: project.description,
       })
     } else {
-      setFormData({
-        name: "",
-        description: "",
-      })
+      setFormData({ name: "", description: "" })
     }
   }, [project, open])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formData.name.trim()) return
+    if (!formData.name.trim() || !isAdmin) return
 
     setIsSubmitting(true)
 
@@ -75,7 +73,9 @@ export function ProjectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>{project ? "Edit Project" : "Create New Project"}</DialogTitle>
+          <DialogTitle>
+            {project ? "Edit Project" : "Create New Project"}
+          </DialogTitle>
           <DialogDescription>
             {project
               ? "Update the details of your project."
@@ -83,58 +83,64 @@ export function ProjectDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">Project Name</Label>
-            <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) =>
-                setFormData((prev) => ({ ...prev, name: e.target.value }))
-              }
-              placeholder="e.g., Website Redesign"
-              required
-              disabled={isSubmitting}
-            />
-          </div>
+        {!isAdmin ? (
+          <p className="text-red-500 text-sm">
+            Only admins can {project ? "edit" : "create"} projects.
+          </p>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Project Name</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, name: e.target.value }))
+                }
+                placeholder="e.g., Website Redesign"
+                required
+                disabled={isSubmitting}
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={formData.description}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  description: e.target.value,
-                }))
-              }
-              placeholder="A brief overview of the project goals."
-              rows={3}
-              disabled={isSubmitting}
-            />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    description: e.target.value,
+                  }))
+                }
+                placeholder="A brief overview of the project goals."
+                rows={3}
+                disabled={isSubmitting}
+              />
+            </div>
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!formData.name || isSubmitting}>
-              {isSubmitting
-                ? project
-                  ? "Saving..."
-                  : "Creating..."
-                : project
-                ? "Save Changes"
-                : "Create Project"}
-            </Button>
-          </DialogFooter>
-        </form>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!formData.name || isSubmitting}>
+                {isSubmitting
+                  ? project
+                    ? "Saving..."
+                    : "Creating..."
+                  : project
+                  ? "Save Changes"
+                  : "Create Project"}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   )

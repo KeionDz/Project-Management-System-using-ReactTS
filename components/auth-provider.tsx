@@ -7,6 +7,7 @@ export interface User {
   id: string
   email: string
   name: string
+  role: string      // ✅ Add role
   avatar?: string
 }
 
@@ -55,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const storedUser = localStorage.getItem("devtrack_user")
     if (storedUser) {
       try {
-        const user = JSON.parse(storedUser)
+        const user = JSON.parse(storedUser) as User
         dispatch({ type: "SET_USER", payload: user })
       } catch {
         localStorage.removeItem("devtrack_user")
@@ -77,15 +78,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
 
       const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || "Login failed")
-      }
+      if (!res.ok) throw new Error(data.error || "Login failed")
 
       const user: User = {
         id: data.user.id,
         email: data.user.email,
         name: data.user.name,
+        role: data.user.role,   // ✅ Include role
         avatar: `/placeholder.svg?height=32&width=32&text=${data.user.name.charAt(0).toUpperCase()}`,
       }
 
@@ -94,7 +93,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       toast({
         title: "Welcome back!",
-        description: `Logged in as ${user.name}`,
+        description: `Logged in as ${user.name}, ${user.role}`,
       })
 
       return true
@@ -131,15 +130,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
 
       const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error || "Registration failed")
-      }
+      if (!res.ok) throw new Error(data.error || "Registration failed")
 
       const user: User = {
         id: data.user.id,
         email: data.user.email,
         name: data.user.name,
+        role: data.user.role || "USER", // ✅ Default to USER if not provided
         avatar: `/placeholder.svg?height=32&width=32&text=${data.user.name.charAt(0).toUpperCase()}`,
       }
 
@@ -165,13 +162,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const logout = () => {
-    localStorage.removeItem("devtrack_user")
-    dispatch({ type: "LOGOUT" })
-    toast({
-      title: "Logged Out",
-      description: "You have been successfully logged out.",
-    })
-  }
+  // ✅ Clear all relevant localStorage keys for DevTrack
+  localStorage.removeItem("devtrack_user")
+  localStorage.removeItem("active_project") // optional: clear active project
+  
+  // ✅ Reset state
+  dispatch({ type: "LOGOUT" })
+
+  // ✅ Clear session storage if used
+  sessionStorage.clear()
+
+  // ✅ Notify user
+  toast({
+    title: "Logged Out",
+    description: "You have been successfully logged out.",
+  })
+}
+
 
   return (
     <AuthContext.Provider value={{ state, login, register, logout }}>
@@ -182,8 +189,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export const useAuth = () => {
   const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider")
-  }
+  if (!context) throw new Error("useAuth must be used within an AuthProvider")
   return context
 }

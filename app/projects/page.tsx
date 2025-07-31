@@ -29,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useDevTrack } from "@/components/devtrack-provider"
+import { useAuth } from "@/components/auth-provider"
 
 type Project = {
   id: string
@@ -46,6 +47,7 @@ export default function ProjectsPage() {
     setActiveProject,
     dispatch,
   } = useDevTrack()
+const { state: { user } } = useAuth() // ✅ get logged-in user
 
   const [loading, setLoading] = useState(true)
   const [showProjectDialog, setShowProjectDialog] = useState(false)
@@ -89,12 +91,22 @@ export default function ProjectsPage() {
     }
   }
 
-const handleCreateProject = async (projectData: Partial<Project>) => {
+  const handleCreateProject = async (projectData: Partial<Project>) => {
+  // ✅ Only admins can create
+  if (!user || user.role !== "ADMIN") {
+    toast({
+      title: "Permission Denied",
+      description: "Only admins can create projects.",
+      variant: "destructive",
+    })
+    return
+  }
+
   try {
     const res = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(projectData),
+      body: JSON.stringify({ ...projectData, userId: user.id }), // ✅ send userId for server validation
     })
 
     if (!res.ok) {
@@ -103,14 +115,9 @@ const handleCreateProject = async (projectData: Partial<Project>) => {
     }
 
     const savedProject: Project = await res.json()
-    addProject(savedProject) // 🔄 Optimistic update
+    addProject(savedProject)
 
-    // ✅ Re-fetch full project list to guarantee sync
     const updatedProjectsRes = await fetch("/api/projects")
-    if (!updatedProjectsRes.ok) {
-      throw new Error("Failed to refresh project list.")
-    }
-
     const updatedProjects: Project[] = await updatedProjectsRes.json()
     dispatch({ type: "SET_PROJECTS", payload: updatedProjects })
 
@@ -130,40 +137,36 @@ const handleCreateProject = async (projectData: Partial<Project>) => {
   }
 }
 
+  const handleUpdateProject = async (projectData: Partial<Project>) => {
+    try {
+      const res = await fetch(`/api/projects/${projectData.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: projectData.name,
+          description: projectData.description,
+        }),
+      })
 
+      if (!res.ok) throw new Error("Failed to update project.")
+      const savedProject: Project = await res.json()
 
+      updateProject(savedProject)
 
-const handleUpdateProject = async (projectData: Partial<Project>) => {
-  try {
-    const res = await fetch(`/api/projects/${projectData.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: projectData.name,
-        description: projectData.description,
-      }),
-    })
-
-    if (!res.ok) throw new Error("Failed to update project.")
-    const savedProject: Project = await res.json()
-
-    updateProject(savedProject) // ✅ Handles toast + state update
-
-    setEditingProject(null)
-    setShowProjectDialog(false)
-  } catch (err) {
-    console.error("❌ Update error:", err)
+      setEditingProject(null)
+      setShowProjectDialog(false)
+    } catch (err) {
+      console.error("❌ Update error:", err)
+    }
   }
-}
 
-
-const handleSaveProject = async (projectData: Partial<Project>) => {
-  if (projectData.id) {
-    await handleUpdateProject(projectData)
-  } else {
-    await handleCreateProject(projectData)
+  const handleSaveProject = async (projectData: Partial<Project>) => {
+    if (projectData.id) {
+      await handleUpdateProject(projectData)
+    } else {
+      await handleCreateProject(projectData)
+    }
   }
-}
 
   return (
     <ProtectedRoute>
@@ -172,11 +175,13 @@ const handleSaveProject = async (projectData: Partial<Project>) => {
         <main className="max-w-7xl mx-auto p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-3xl font-bold">Your Projects</h1>
+              <h1 className="text-3xl font-bold">Team Projects</h1>
               <p className="text-muted-foreground">
                 Select a project to view its Kanban board and tasks.
               </p>
             </div>
+
+            {/* ✅ Button always visible */}
             <Button
               onClick={() => {
                 setEditingProject(null)
@@ -220,14 +225,16 @@ const handleSaveProject = async (projectData: Partial<Project>) => {
                             <Edit className="mr-2 h-4 w-4" />
                             Edit
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteProject(project.id)}
-                            className="text-red-600 dark:text-red-400"
-                            disabled={state.projects.length <= 1}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                          </DropdownMenuItem>
+                          {user?.role === "ADMIN" && (
+    <DropdownMenuItem
+      onClick={() => handleDeleteProject(project.id)}
+      className="text-red-600 dark:text-red-400"
+      disabled={state.projects.length <= 1}
+    >
+      <Trash2 className="mr-2 h-4 w-4" />
+      Delete
+    </DropdownMenuItem>
+  )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>

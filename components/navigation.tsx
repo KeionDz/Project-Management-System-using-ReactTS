@@ -92,6 +92,8 @@ export function Navigation() {
                   <div className="flex flex-col space-y-1 leading-none">
                     <p className="font-medium">{state.user?.name}</p>
                     <p className="w-[200px] truncate text-sm text-muted-foreground">{state.user?.email}</p>
+                                        <p className="w-[200px] truncate text-sm text-muted-foreground">{state.user?.role}</p>
+
                   </div>
                 </div>
                 <DropdownMenuItem onClick={handleLogout} className="text-red-600 dark:text-red-400">
