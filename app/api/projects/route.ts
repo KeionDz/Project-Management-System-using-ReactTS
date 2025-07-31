@@ -16,16 +16,22 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-
     const { name, description } = body
-    if (!name || !description) {
-      return NextResponse.json({ error: "Missing fields" }, { status: 400 })
+
+    if (!name?.trim()) {
+      return NextResponse.json({ error: "Project name is required." }, { status: 400 })
     }
 
     const project = await prisma.project.create({
       data: {
-        name,
-        description,
+        name: name.trim(),
+        description: description?.trim() || "",
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        createdAt: true,
       },
     })
 

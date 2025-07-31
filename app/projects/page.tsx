@@ -1,8 +1,8 @@
 "use client"
 
-import { toast } from "@/components/ui/use-toast"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { toast } from "@/components/ui/use-toast"
 import { Navigation } from "@/components/navigation"
 import { ProtectedRoute } from "@/components/protected-route"
 import { Button } from "@/components/ui/button"
@@ -28,6 +28,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useDevTrack } from "@/components/devtrack-provider"
 
 type Project = {
   id: string
@@ -37,7 +38,15 @@ type Project = {
 }
 
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>([])
+  const {
+    state,
+    addProject,
+    updateProject,
+    deleteProject,
+    setActiveProject,
+    dispatch,
+  } = useDevTrack()
+
   const [loading, setLoading] = useState(true)
   const [showProjectDialog, setShowProjectDialog] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
@@ -47,12 +56,12 @@ export default function ProjectsPage() {
     const fetchProjects = async () => {
       const res = await fetch("/api/projects")
       const data = await res.json()
-      setProjects(data)
+      dispatch({ type: "SET_PROJECTS", payload: data })
       setLoading(false)
     }
 
     fetchProjects()
-  }, [])
+  }, [dispatch])
 
   const handleEditProject = (project: Project) => {
     setEditingProject(project)
@@ -60,88 +69,101 @@ export default function ProjectsPage() {
   }
 
   const handleSelectProject = (projectId: string) => {
+    setActiveProject(projectId)
     router.push("/board")
   }
 
   const handleDeleteProject = async (projectId: string) => {
-    const project = projects.find((p) => p.id === projectId)
     const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" })
 
     if (res.ok) {
-      setProjects((prev) => prev.filter((p) => p.id !== projectId))
-      toast({
-        title: "Project Deleted",
-        description: `"${project?.name}" has been deleted.`,
-      })
+      deleteProject(projectId)
     } else {
       const error = await res.json()
       console.error("❌ Failed to delete project:", error)
       toast({
-        title: "Failed to Delete Project",
-        description: error.error || "An unknown error occurred.",
+        title: "Error deleting project",
+        description: error.error || "Something went wrong.",
         variant: "destructive",
       })
     }
   }
 
-  const handleSaveProject = async (projectData: Partial<Project>) => {
-    try {
-      let savedProject: Project
+const handleCreateProject = async (projectData: Partial<Project>) => {
+  try {
+    const res = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(projectData),
+    })
 
-      if (projectData.id) {
-        // Edit existing project
-        const res = await fetch(`/api/projects/${projectData.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: projectData.name,
-            description: projectData.description,
-          }),
-        })
-
-        if (!res.ok) throw new Error("Failed to update project.")
-        savedProject = await res.json()
-
-        toast({
-          title: "Project Updated",
-          description: `"${savedProject.name}" has been updated.`,
-        })
-      } else {
-        // Create new project
-        const res = await fetch("/api/projects", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(projectData),
-        })
-
-        if (!res.ok) throw new Error("Failed to create project.")
-        savedProject = await res.json()
-
-        toast({
-          title: "Project Created",
-          description: `"${savedProject.name}" has been created.`,
-        })
-      }
-
-      // Update UI
-      setProjects((prev) => {
-        const exists = prev.find((p) => p.id === savedProject.id)
-        return exists
-          ? prev.map((p) => (p.id === savedProject.id ? savedProject : p))
-          : [...prev, savedProject]
-      })
-
-      setEditingProject(null)
-      setShowProjectDialog(false)
-    } catch (err) {
-      console.error("❌ Save error:", err)
-      toast({
-        title: "Failed to Save Project",
-        description: "There was a problem saving the project.",
-        variant: "destructive",
-      })
+    if (!res.ok) {
+      const error = await res.json()
+      throw new Error(error?.error || "Failed to create project.")
     }
+
+    const savedProject: Project = await res.json()
+    addProject(savedProject) // 🔄 Optimistic update
+
+    // ✅ Re-fetch full project list to guarantee sync
+    const updatedProjectsRes = await fetch("/api/projects")
+    if (!updatedProjectsRes.ok) {
+      throw new Error("Failed to refresh project list.")
+    }
+
+    const updatedProjects: Project[] = await updatedProjectsRes.json()
+    dispatch({ type: "SET_PROJECTS", payload: updatedProjects })
+
+    toast({
+      title: "Project Created",
+      description: `“${projectData.name}” has been added.`,
+    })
+
+    setShowProjectDialog(false)
+  } catch (err) {
+    console.error("❌ Create error:", err)
+    toast({
+      title: "Error creating project",
+      description: (err as Error).message || "Something went wrong.",
+      variant: "destructive",
+    })
   }
+}
+
+
+
+
+const handleUpdateProject = async (projectData: Partial<Project>) => {
+  try {
+    const res = await fetch(`/api/projects/${projectData.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: projectData.name,
+        description: projectData.description,
+      }),
+    })
+
+    if (!res.ok) throw new Error("Failed to update project.")
+    const savedProject: Project = await res.json()
+
+    updateProject(savedProject) // ✅ Handles toast + state update
+
+    setEditingProject(null)
+    setShowProjectDialog(false)
+  } catch (err) {
+    console.error("❌ Update error:", err)
+  }
+}
+
+
+const handleSaveProject = async (projectData: Partial<Project>) => {
+  if (projectData.id) {
+    await handleUpdateProject(projectData)
+  } else {
+    await handleCreateProject(projectData)
+  }
+}
 
   return (
     <ProtectedRoute>
@@ -176,7 +198,7 @@ export default function ProjectsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {projects.map((project) => (
+              {state.projects.map((project) => (
                 <Card
                   key={project.id}
                   className="hover:shadow-md transition-shadow"
@@ -201,7 +223,7 @@ export default function ProjectsPage() {
                           <DropdownMenuItem
                             onClick={() => handleDeleteProject(project.id)}
                             className="text-red-600 dark:text-red-400"
-                            disabled={projects.length <= 1}
+                            disabled={state.projects.length <= 1}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
                             Delete

@@ -11,7 +11,7 @@ export async function DELETE(
     console.log("🗑️ Deleting project:", projectId)
 
     await prisma.project.delete({
-      where: { id: projectId },
+      where: { id: projectId }, // If your ID is an Int, use: id: parseInt(projectId)
     })
 
     return NextResponse.json({ success: true })
@@ -20,7 +20,6 @@ export async function DELETE(
     return NextResponse.json({ error: "Failed to delete project." }, { status: 500 })
   }
 }
-
 export async function PUT(
   req: NextRequest,
   context: { params: { id: string } }
@@ -30,12 +29,20 @@ export async function PUT(
     const body = await req.json()
     const { name, description } = body
 
+    // Build dynamic update data object
+    const updateData: { name?: string; description?: string } = {}
+    if (name !== undefined) updateData.name = name
+    if (description !== undefined) updateData.description = description
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: "No fields provided for update." }, { status: 400 })
+    }
+
+    console.log("✏️ Updating project:", projectId, "→", updateData)
+
     const updated = await prisma.project.update({
       where: { id: projectId },
-      data: {
-        name,
-        description,
-      },
+      data: updateData,
     })
 
     return NextResponse.json(updated)

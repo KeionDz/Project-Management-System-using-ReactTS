@@ -1,3 +1,5 @@
+"use client"
+
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,8 +18,8 @@ import type { Project } from "@/components/devtrack-provider"
 interface ProjectDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  project?: Project | null // If present, editing; otherwise, creating
-  onSave: (projectData: Omit<Project, "id" | "createdAt"> | Project) => void
+  project?: Project | null
+  onSave: (projectData: Partial<Project>) => Promise<void>
 }
 
 export function ProjectDialog({
@@ -46,37 +48,24 @@ export function ProjectDialog({
     }
   }, [project, open])
 
-  // 🔧 This sends a POST request to create a new project
-  async function createProject(data: { name: string; description: string }) {
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    })
-
-    if (!res.ok) {
-      throw new Error("Failed to create project")
-    }
-
-    return await res.json()
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.name.trim()) return
 
     setIsSubmitting(true)
+
     try {
-      if (project) {
-        await onSave({ ...project, ...formData }) // Optional: handle edits if supported
-      } else {
-        const created = await createProject(formData)
-        await onSave(created)
+      const payload: Partial<Project> = {
+        id: project?.id,
+        name: formData.name,
+        description: formData.description,
       }
+
+      await onSave(payload)
       onOpenChange(false)
     } catch (err) {
-      console.error("Project creation failed:", err)
-      alert("Failed to create project.")
+      console.error("❌ Project save failed:", err)
+      alert("Failed to save project.")
     } finally {
       setIsSubmitting(false)
     }
