@@ -1,9 +1,10 @@
-import Pusher from "pusher"
+// lib/pusher-server.ts
+import Pusher from "pusher";
 
 export const pusherServer = new Pusher({
-  appId: process.env.PUSHER_APP_ID!,
-  key: process.env.NEXT_PUBLIC_PUSHER_KEY!,
-  secret: process.env.PUSHER_SECRET!,
-  cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
+  appId: process.env.PUSHER_APP_ID!,       // server-only
+  key: process.env.PUSHER_KEY!,            // server-only
+  secret: process.env.PUSHER_SECRET!,      // server-only
+  cluster: process.env.PUSHER_CLUSTER!,    // server-only
   useTLS: true,
-})
+});

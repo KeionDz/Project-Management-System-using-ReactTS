@@ -1,9 +1,9 @@
-import Pusher from "pusher-js"
+// lib/pusher-client.ts
+import Pusher from "pusher-js";
 
-// ✅ Make sure NEXT_PUBLIC env vars are set in .env.local
 export const pusherClient = new Pusher(
-  process.env.NEXT_PUBLIC_PUSHER_KEY!,
+  process.env.NEXT_PUBLIC_PUSHER_KEY!,     // public key
   {
-    cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
+    cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!, // public cluster
   }
-)
+);
