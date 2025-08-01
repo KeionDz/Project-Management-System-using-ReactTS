@@ -4,6 +4,7 @@ import type React from "react"
 import { createContext, useContext, useReducer, useEffect } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { usePathname, useRouter } from "next/navigation"
+import { pusherClient } from "@/lib/pusher-client" // ✅ client for listening
 
 // -----------------------
 // Interfaces
@@ -264,6 +265,26 @@ export function DevTrackProvider({ children }: { children: React.ReactNode }) {
     fetchProjectData()
   }, [state.activeProjectId, pathname])
 
+  useEffect(() => {
+  if (!state.activeProjectId) return
+
+  const channel = pusherClient.subscribe(`project-${state.activeProjectId}`)
+
+  channel.bind("tasks-updated", (updatedTasks: Task[]) => {
+    dispatch({ type: "SET_TASKS", payload: updatedTasks })
+  })
+
+  channel.bind("columns-updated", (updatedColumns: StatusColumn[]) => {
+    dispatch({ type: "SET_STATUS_COLUMNS", payload: updatedColumns })
+  })
+
+  return () => {
+    pusherClient.unsubscribe(`project-${state.activeProjectId}`)
+  }
+}, [state.activeProjectId])
+
+
+
   // -----------------------
   // Action Helpers
   // -----------------------
@@ -356,36 +377,38 @@ const addProject = (data: Omit<Project, "id" | "createdAt">) => {
 
   const setActiveProject = (id: string | null) => dispatch({ type: "SET_ACTIVE_PROJECT", payload: id })
   const addTask = async (data: Omit<Task, "id" | "projectId">) => {
-  if (!state.activeProjectId) return
+    if (!state.activeProjectId) return
 
-  const tempId = `temp-${Date.now()}`
-  const newTask: Task = {
-    ...data,
-    id: tempId,
-    projectId: state.activeProjectId,
-    createdAt: new Date().toISOString(),
-    order: state.tasks.filter(
-      (t) => t.projectId === state.activeProjectId && t.statusId === data.statusId
-    ).length, // ✅ order in correct column
+    const tempId = `temp-${Date.now()}`
+    const newTask: Task = {
+      ...data,
+      id: tempId,
+      projectId: state.activeProjectId,
+      createdAt: new Date().toISOString(),
+      order: state.tasks.filter(
+        (t) => t.projectId === state.activeProjectId && t.statusId === data.statusId
+      ).length,
+    }
+
+    dispatch({ type: "ADD_TASK", payload: newTask })
+
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...data, projectId: state.activeProjectId }),
+      })
+
+      if (!res.ok) throw new Error("Failed to add task")
+
+      const { task: createdTask } = await res.json()
+      dispatch({ type: "DELETE_TASK", payload: tempId })
+      dispatch({ type: "ADD_TASK", payload: createdTask })
+    } catch (error) {
+      console.error("❌ Failed to create task", error)
+      dispatch({ type: "DELETE_TASK", payload: tempId })
+    }
   }
-
-  dispatch({ type: "ADD_TASK", payload: newTask })
-
-  try {
-    const res = await fetch("/api/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...data, projectId: state.activeProjectId }),
-    })
-
-    if (!res.ok) throw new Error("Failed to add task")
-    const created: Task = await res.json()
-    dispatch({ type: "UPDATE_TASK", payload: created })
-  } catch (error) {
-    console.error("❌ Failed to create task", error)
-    dispatch({ type: "DELETE_TASK", payload: tempId })
-  }
-}
 
 
   const updateTask = async (task: Task) => {
@@ -457,32 +480,24 @@ const addProject = (data: Omit<Project, "id" | "createdAt">) => {
     console.error("Delete failed", error)
   }
 }
-
 const reorderTasks = async (updatedTasks: Task[]) => {
-  // 1️⃣ Optimistically update local state
   dispatch({ type: "SET_TASKS", payload: updatedTasks })
-
-  try {
-    // 2️⃣ Persist to server
-    await fetch("/api/tasks/reorder", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        updatedTasks.map((t) => ({ id: t.id, statusId: t.statusId, order: t.order }))
-      ),
-    })
-    toast({ title: "Task order saved" })
-  } catch (err) {
-    console.error(err)
-    toast({ title: "Error", description: "Failed to save task order", variant: "destructive" })
-  }
+  await fetch("/api/tasks/reorder", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updatedTasks.map((t) => ({ id: t.id, statusId: t.statusId, order: t.order }))),
+  })
 }
 
+const reorderStatusColumns = async (columns: StatusColumn[]) => {
+  dispatch({ type: "REORDER_STATUS_COLUMNS", payload: columns })
+  await fetch("/api/status/reorder", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(columns.map((c, i) => ({ id: c.id, order: i }))),
+  })
+}
 
-
-
-  const reorderStatusColumns = (columns: StatusColumn[]) =>
-    dispatch({ type: "REORDER_STATUS_COLUMNS", payload: columns })
 
   return (
     <DevTrackContext.Provider

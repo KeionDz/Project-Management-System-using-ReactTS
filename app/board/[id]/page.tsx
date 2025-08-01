@@ -30,6 +30,7 @@ import { SortableStatusColumn } from "@/components/sortable-status-column"
 import { useDraggableScroll } from "@/hooks/use-draggable-scroll"
 import { cn } from "@/lib/utils"
 import { toast } from "@/components/ui/use-toast"
+import { pusherClient } from "@/lib/pusher"
 
 export default function KanbanBoardPage() {
   const {
@@ -41,6 +42,7 @@ export default function KanbanBoardPage() {
     setTasks,
     setStatusColumns,
   } = useDevTrack()
+
   const router = useRouter()
   const params = useParams<{ projectId: string }>()
   const projectId = params.projectId
@@ -86,11 +88,32 @@ export default function KanbanBoardPage() {
     }
 
     fetchProjectData()
+
+    // ✅ Setup Pusher real-time subscription
+    const channel = pusherClient.subscribe(`project-${projectId}`)
+
+    channel.bind("tasks-updated", (updatedTasks: Task[]) => {
+      setTasks((prev) => {
+        const other = prev.filter((t) => t.projectId !== projectId)
+        return [...other, ...updatedTasks]
+      })
+    })
+
+    channel.bind("columns-updated", (updatedCols: StatusColumn[]) => {
+      setStatusColumns((prev) => {
+        const other = prev.filter((c) => c.projectId !== projectId)
+        return [...other, ...updatedCols]
+      })
+    })
+
+    return () => {
+      pusherClient.unsubscribe(`project-${projectId}`)
+    }
   }, [projectId, state.projects, setActiveProject, router, setStatusColumns, setTasks])
 
-  const currentProjectTasks = state.tasks.filter((t: Task) => t.projectId === state.activeProjectId)
+  const currentProjectTasks = state.tasks.filter((t) => t.projectId === state.activeProjectId)
   const currentProjectColumns = state.statusColumns.filter(
-    (c: StatusColumn) => c.projectId === state.activeProjectId
+    (c) => c.projectId === state.activeProjectId
   )
 
   const isDndDragging = !!activeDragItem || !!activeColumn
@@ -99,14 +122,14 @@ export default function KanbanBoardPage() {
 
   const handleDragStart = (event: DragStartEvent) => {
     const activeId = event.active.id as string
-    const task = currentProjectTasks.find((t: Task) => t.id === activeId)
+    const task = currentProjectTasks.find((t) => t.id === activeId)
     if (task) {
       setActiveDragItem(task)
       return
     }
 
     if (isReorderingColumns) {
-      const column = currentProjectColumns.find((c: StatusColumn) => c.id === activeId)
+      const column = currentProjectColumns.find((c) => c.id === activeId)
       if (column) setActiveColumn(column)
     }
   }
@@ -128,37 +151,33 @@ export default function KanbanBoardPage() {
       return
     }
 
-    // Handle column reorder
+    // ------------------ COLUMN REORDER ------------------
     if (activeColumn) {
-      const oldIndex = currentProjectColumns.findIndex((c: { id: string }) => c.id === activeId)
-      const newIndex = currentProjectColumns.findIndex((c: { id: string }) => c.id === overId)
+      const oldIndex = currentProjectColumns.findIndex((c) => c.id === activeId)
+      const newIndex = currentProjectColumns.findIndex((c) => c.id === overId)
       if (oldIndex !== newIndex) {
-        const reordered: StatusColumn[] = arrayMove(currentProjectColumns, oldIndex, newIndex)
+        const reordered: StatusColumn[] = arrayMove(currentProjectColumns, oldIndex, newIndex).map(
+          (col, index) => ({ ...col, order: index })
+        )
 
-        // Update local state
         reorderStatusColumns(reordered)
 
-        // ✅ Save new order to DB
-        await fetch("/api/status/reorder", {
+        // ✅ Persist to DB and trigger Pusher
+        await fetch("/api/status-columns/reorder", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            reordered.map((col, index) => ({
-              id: col.id,
-              order: index,
-            }))
-          ),
+          body: JSON.stringify(reordered.map((col) => ({ id: col.id, order: col.order, projectId }))),
         })
       }
     }
 
-    // Handle task movement and persist to DB
+    // ------------------ TASK REORDER ------------------
     if (activeDragItem) {
       let newStatusId: string | undefined
       let targetTaskId: string | undefined
 
       if (event.over?.data.current?.type === "task") {
-        const overTask = currentProjectTasks.find((t: { id: string }) => t.id === overId)
+        const overTask = currentProjectTasks.find((t) => t.id === overId)
         if (overTask) {
           newStatusId = overTask.statusId
           targetTaskId = overId
@@ -168,31 +187,22 @@ export default function KanbanBoardPage() {
       }
 
       if (newStatusId && (activeDragItem.statusId !== newStatusId || targetTaskId)) {
-        // 1️⃣ Update local state for UI
         moveTask(activeId, newStatusId, targetTaskId)
 
-        // 2️⃣ Compute new ordered list for that column
         const updatedTasks = currentProjectTasks
-          .map((t: { id: string }) =>
-            t.id === activeId
-              ? { ...t, statusId: newStatusId }
-              : t
-          )
-          .filter((t: { statusId: string }) => t.statusId === newStatusId)
-          .sort((a: { order: any }, b: { order: any }) => (a.order ?? 0) - (b.order ?? 0))
-          .map((t: any, index: any) => ({ ...t, order: index }))
+          .map((t) => (t.id === activeId ? { ...t, statusId: newStatusId } : t))
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+          .map((t, index) => ({ ...t, order: index }))
 
-        // 3️⃣ Persist to DB
         await fetch("/api/tasks/reorder", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            updatedTasks.map((t: { id: any; statusId: any; order: any }) => ({
-              id: t.id,
-              statusId: t.statusId,
-              order: t.order,
-            }))
-          ),
+          body: JSON.stringify(updatedTasks.map((t) => ({
+            id: t.id,
+            statusId: t.statusId,
+            order: t.order,
+            projectId,
+          }))),
         })
       }
     }
@@ -208,16 +218,14 @@ export default function KanbanBoardPage() {
 
   const getTasksByStatus = (status: string) =>
     currentProjectTasks
-      .filter((t: Task) => t.statusId === status)
-      .sort((a: Task, b: Task) => (a.order ?? 0) - (b.order ?? 0))
+      .filter((t) => t.statusId === status)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
 
-  const sortedColumns = [...currentProjectColumns].sort(
-    (a: StatusColumn, b: StatusColumn) => a.order - b.order
-  )
+  const sortedColumns = [...currentProjectColumns].sort((a, b) => a.order - b.order)
   const enableHorizontalScroll = sortedColumns.length >= 6
 
   const isLoading = !state.activeProjectId || !state.projects.length || state.loading
-  const activeProject = state.projects.find((p: Project) => p.id === state.activeProjectId)
+  const activeProject = state.projects.find((p) => p.id === state.activeProjectId)
 
   return (
     <ProtectedRoute>
@@ -291,10 +299,10 @@ export default function KanbanBoardPage() {
                   )}
                 >
                   <SortableContext
-                    items={sortedColumns.map((c: StatusColumn) => c.id)}
+                    items={sortedColumns.map((c) => c.id)}
                     strategy={horizontalListSortingStrategy}
                   >
-                    {sortedColumns.map((column: StatusColumn) => (
+                    {sortedColumns.map((column) => (
                       <SortableStatusColumn
                         key={column.id}
                         column={column}

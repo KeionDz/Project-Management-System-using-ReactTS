@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -25,9 +25,11 @@ import { SortableStatusColumn } from "@/components/sortable-status-column"
 import type { Task, StatusColumn } from "@/components/devtrack-provider"
 import { useDevTrack } from "@/components/devtrack-provider"
 import { toast } from "@/components/ui/use-toast"
+import { pusherClient } from "@/lib/pusher-client"
 
 export function KanbanBoard() {
   const { state, dispatch } = useDevTrack()
+
   const [activeTask, setActiveTask] = useState<Task | null>(null)
   const [activeColumn, setActiveColumn] = useState<StatusColumn | null>(null)
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -40,6 +42,25 @@ export function KanbanBoard() {
   const [overIdForPlaceholder, setOverIdForPlaceholder] = useState<string | null>(null)
 
   const sortedColumns = [...state.statusColumns].sort((a, b) => a.order - b.order)
+
+  // 🔹 Live sync via Pusher
+  useEffect(() => {
+    if (!state.activeProjectId) return
+
+    const channel = pusherClient.subscribe(`project-${state.activeProjectId}`)
+
+    channel.bind("tasks-updated", (updatedTasks: Task[]) => {
+      dispatch({ type: "SET_TASKS", payload: updatedTasks })
+    })
+
+    channel.bind("columns-updated", (updatedColumns: StatusColumn[]) => {
+      dispatch({ type: "SET_STATUS_COLUMNS", payload: updatedColumns })
+    })
+
+    return () => {
+      pusherClient.unsubscribe(`project-${state.activeProjectId}`)
+    }
+  }, [state.activeProjectId])
 
   const handleDragStart = (event: DragStartEvent) => {
     const activeId = event.active.id as string

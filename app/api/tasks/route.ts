@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
+import { pusherServer } from "@/lib/pusher"
 
-// Fetch tasks
+// -----------------------
+// GET: Fetch tasks by projectId
+// -----------------------
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
@@ -21,7 +24,9 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// Create task
+// -----------------------
+// POST: Create task
+// -----------------------
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -52,6 +57,10 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    // 🔹 Broadcast updated tasks
+    const tasks = await prisma.task.findMany({ where: { projectId } })
+    await pusherServer.trigger(`project-${projectId}`, "tasks-updated", tasks)
+
     return NextResponse.json({ task })
   } catch (error) {
     console.error("POST /api/tasks Error:", error)
@@ -59,7 +68,9 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Update task
+// -----------------------
+// PUT: Update task
+// -----------------------
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json()
@@ -82,6 +93,10 @@ export async function PUT(req: NextRequest) {
       },
     })
 
+    // 🔹 Broadcast updated tasks
+    const tasks = await prisma.task.findMany({ where: { projectId: task.projectId } })
+    await pusherServer.trigger(`project-${task.projectId}`, "tasks-updated", tasks)
+
     return NextResponse.json({ task })
   } catch (error) {
     console.error("PUT /api/tasks Error:", error)
@@ -89,14 +104,20 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-// Delete task
+// -----------------------
+// DELETE: Delete task
+// -----------------------
 export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const id = searchParams.get("id")
     if (!id) return NextResponse.json({ error: "Task ID required" }, { status: 400 })
 
-    await prisma.task.delete({ where: { id } })
+    const task = await prisma.task.delete({ where: { id } })
+
+    // 🔹 Broadcast updated tasks
+    const tasks = await prisma.task.findMany({ where: { projectId: task.projectId } })
+    await pusherServer.trigger(`project-${task.projectId}`, "tasks-updated", tasks)
 
     return NextResponse.json({ success: true })
   } catch (error) {

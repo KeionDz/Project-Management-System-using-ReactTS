@@ -1,21 +1,12 @@
 import { NextResponse } from "next/server"
 import prisma from "@/lib/db"
-
-interface TaskUpdate {
-  id: string
-  statusId: string
-  order: number
-}
+import { pusherServer } from "@/lib/pusher-server"
 
 export async function PUT(req: Request) {
   try {
-    const updates: TaskUpdate[] = await req.json()
+    const updates: { id: string; statusId: string; order: number }[] = await req.json()
 
-    if (!Array.isArray(updates) || updates.some((t) => !t.id || !t.statusId)) {
-      return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
-    }
-
-    // ✅ Use transaction for atomic updates
+    // Update all tasks in transaction
     const updatedTasks = await prisma.$transaction(
       updates.map((task) =>
         prisma.task.update({
@@ -28,9 +19,19 @@ export async function PUT(req: Request) {
       )
     )
 
+    // Broadcast to all clients
+    const projectId = updatedTasks[0]?.projectId
+    if (projectId) {
+      await pusherServer.trigger(
+        `project-${projectId}`,
+        "tasks-updated",
+        updatedTasks
+      )
+    }
+
     return NextResponse.json({ success: true, updatedTasks })
   } catch (error) {
-    console.error("Failed to reorder tasks:", error)
+    console.error(error)
     return NextResponse.json({ error: "Failed to reorder tasks" }, { status: 500 })
   }
 }
