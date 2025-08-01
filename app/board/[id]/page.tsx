@@ -56,6 +56,7 @@ export default function KanbanBoardPage() {
   const [isReorderingColumns, setIsReorderingColumns] = useState(false)
   const [overIdForPlaceholder, setOverIdForPlaceholder] = useState<string | null>(null)
 
+  // ------------------ FETCH & PUSHER ------------------
   useEffect(() => {
     if (!projectId) return
 
@@ -73,15 +74,21 @@ export default function KanbanBoardPage() {
         if (!res.ok) throw new Error("Failed to fetch project data")
         const projectData = await res.json()
 
-        setStatusColumns((prev: StatusColumn[]) => [
-          ...prev.filter((c: StatusColumn) => c.projectId !== projectId),
-          ...projectData.statuses,
-        ])
+        setStatusColumns((prev: StatusColumn[]) => {
+          const merged = [
+            ...prev.filter((c) => c.projectId !== projectId),
+            ...projectData.statuses,
+          ]
+          return Array.from(new Map(merged.map((c) => [c.id, c])).values())
+        })
 
-        setTasks((prev: Task[]) => [
-          ...prev.filter((t: Task) => t.projectId !== projectId),
-          ...projectData.tasks,
-        ])
+        setTasks((prev: Task[]) => {
+          const merged = [
+            ...prev.filter((t) => t.projectId !== projectId),
+            ...projectData.tasks,
+          ]
+          return Array.from(new Map(merged.map((t) => [t.id, t])).values())
+        })
       } catch (err) {
         console.error(err)
       }
@@ -94,15 +101,21 @@ export default function KanbanBoardPage() {
 
     channel.bind("tasks-updated", (updatedTasks: Task[]) => {
       setTasks((prev) => {
-        const other = prev.filter((t) => t.projectId !== projectId)
-        return [...other, ...updatedTasks]
+        const merged = [
+          ...prev.filter((t) => t.projectId !== projectId),
+          ...updatedTasks,
+        ]
+        return Array.from(new Map(merged.map((t) => [t.id, t])).values())
       })
     })
 
     channel.bind("columns-updated", (updatedCols: StatusColumn[]) => {
       setStatusColumns((prev) => {
-        const other = prev.filter((c) => c.projectId !== projectId)
-        return [...other, ...updatedCols]
+        const merged = [
+          ...prev.filter((c) => c.projectId !== projectId),
+          ...updatedCols,
+        ]
+        return Array.from(new Map(merged.map((c) => [c.id, c])).values())
       })
     })
 
@@ -111,6 +124,7 @@ export default function KanbanBoardPage() {
     }
   }, [projectId, state.projects, setActiveProject, router, setStatusColumns, setTasks])
 
+  // ------------------ DERIVED STATE ------------------
   const currentProjectTasks = state.tasks.filter((t) => t.projectId === state.activeProjectId)
   const currentProjectColumns = state.statusColumns.filter(
     (c) => c.projectId === state.activeProjectId
@@ -120,6 +134,7 @@ export default function KanbanBoardPage() {
   const { scrollRef, onMouseDown, isDragging: isScrolling } =
     useDraggableScroll<HTMLDivElement>(isDndDragging)
 
+  // ------------------ DRAG HANDLERS ------------------
   const handleDragStart = (event: DragStartEvent) => {
     const activeId = event.active.id as string
     const task = currentProjectTasks.find((t) => t.id === activeId)
@@ -211,6 +226,7 @@ export default function KanbanBoardPage() {
     setActiveColumn(null)
   }
 
+  // ------------------ UI HELPERS ------------------
   const handleEditTask = (task: Task) => {
     setTaskToEdit(task)
     setShowEditDialog(true)
@@ -227,6 +243,7 @@ export default function KanbanBoardPage() {
   const isLoading = !state.activeProjectId || !state.projects.length || state.loading
   const activeProject = state.projects.find((p) => p.id === state.activeProjectId)
 
+  // ------------------ RENDER ------------------
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-background">

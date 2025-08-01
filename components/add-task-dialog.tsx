@@ -14,7 +14,13 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { type Task, type StatusColumn, useDevTrack } from "@/components/devtrack-provider"
 import { toast } from "@/components/ui/use-toast"
 
@@ -24,12 +30,15 @@ interface AddTaskDialogProps {
 }
 
 export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
-  const { state, dispatch } = useDevTrack()
+  const { state } = useDevTrack()
   const [loading, setLoading] = useState(false)
 
   // ✅ Filter status columns for the current active project
   const availableStatusColumns: StatusColumn[] = useMemo(
-    () => state.statusColumns.filter((col: { projectId: any }) => col.projectId === state.activeProjectId),
+    () =>
+      state.statusColumns.filter(
+        (col: { projectId: string }) => col.projectId === state.activeProjectId
+      ),
     [state.statusColumns, state.activeProjectId]
   )
 
@@ -45,15 +54,14 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
   })
 
   // ✅ Ensure statusId is always the first column if form resets
- useEffect(() => {
-  if (open && availableStatusColumns.length) {
-    setFormData((prev) => ({
-      ...prev,
-      statusId: prev.statusId || availableStatusColumns[0].id,
-    }))
-  }
-}, [open, availableStatusColumns])
-
+  useEffect(() => {
+    if (open && availableStatusColumns.length) {
+      setFormData((prev) => ({
+        ...prev,
+        statusId: prev.statusId || availableStatusColumns[0].id,
+      }))
+    }
+  }, [open, availableStatusColumns])
 
   const resetForm = () => {
     setFormData({
@@ -75,7 +83,9 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
     setLoading(true)
 
     // ✅ Calculate order for the selected status column
-    const tasksInStatus = state.tasks.filter((t: { statusId: string }) => t.statusId === formData.statusId)
+    const tasksInStatus = state.tasks.filter(
+      (t: { statusId: string }) => t.statusId === formData.statusId
+    )
     const newOrder = tasksInStatus.length
 
     const newTask = {
@@ -105,20 +115,25 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
 
       const { task } = await res.json()
 
-      // ✅ Update local state so the task immediately shows in UI
-      dispatch({ type: "ADD_TASK", payload: task })
+      // ✅ Do NOT dispatch ADD_TASK here to avoid duplicates
+      // Pusher will broadcast the new task to all clients including this one
 
       toast({
         title: "Task Created",
-        description: `"${task.title}" has been added to ${availableStatusColumns.find((c) => c.id === formData.statusId)?.name || "board"
-          }.`,
+        description: `"${task.title}" has been added to ${
+          availableStatusColumns.find((c) => c.id === formData.statusId)?.name || "board"
+        }.`,
       })
 
       resetForm()
       onOpenChange(false)
     } catch (err) {
       console.error(err)
-      toast({ title: "Error", description: "Failed to create task.", variant: "destructive" })
+      toast({
+        title: "Error",
+        description: "Failed to create task.",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
