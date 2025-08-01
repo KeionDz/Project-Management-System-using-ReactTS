@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { type StatusColumn, useDevTrack } from "@/components/devtrack-provider"
+import { useDevTrack } from "@/components/devtrack-provider"
+import { toast } from "@/components/ui/use-toast"
 
 interface AddStatusDialogProps {
   open: boolean
@@ -34,28 +35,45 @@ const colorOptions = [
 
 export function AddStatusDialog({ open, onOpenChange }: AddStatusDialogProps) {
   const { addStatusColumn, state } = useDevTrack()
+  const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
-    title: "",
+    name: "",
     color: colorOptions[0].value,
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    const newColumn: Omit<StatusColumn, "id" | "projectId"> = {
-      // projectId is added by addStatusColumn
-      ...formData,
-      order: state.statusColumns.filter((col) => col.projectId === state.activeProjectId).length, // Order within active project
+    if (!state.activeProjectId) {
+      toast({ title: "Error", description: "No active project selected.", variant: "destructive" })
+      return
     }
 
-    addStatusColumn(newColumn)
-    onOpenChange(false)
+    setLoading(true)
+    try {
+      // ✅ Use context helper to handle optimistic UI + server sync
+      await addStatusColumn({
+        name: formData.name,
+        color: formData.color,
+        order: state.statusColumns.filter(
+          (col: { projectId: any }) => col.projectId === state.activeProjectId
+        ).length,
+      })
 
-    // Reset form
-    setFormData({
-      title: "",
-      color: colorOptions[0].value,
-    })
+      toast({
+        title: "Column Added",
+        description: `Status "${formData.name}" created.`,
+      })
+
+      // Reset & close
+      onOpenChange(false)
+      setFormData({ name: "", color: colorOptions[0].value })
+    } catch (error) {
+      console.error(error)
+      toast({ title: "Error", description: "Failed to add status column.", variant: "destructive" })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -68,18 +86,18 @@ export function AddStatusDialog({ open, onOpenChange }: AddStatusDialogProps) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="title">Column Title</Label>
+            <Label htmlFor="name">Column Name</Label>
             <Input
-              id="title"
-              value={formData.title}
-              onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
+              id="name"
+              value={formData.name}
+              onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
               placeholder="e.g., In Review, Testing, Deployed"
               required
             />
           </div>
 
           <div className="space-y-2">
-            <Label>Column Color</Label>
+            <Label>Column Color (UI only)</Label>
             <div className="grid grid-cols-3 gap-2">
               {colorOptions.map((option) => (
                 <button
@@ -103,7 +121,9 @@ export function AddStatusDialog({ open, onOpenChange }: AddStatusDialogProps) {
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit">Add Column</Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Adding..." : "Add Column"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

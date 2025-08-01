@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -15,7 +15,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { type Task, useDevTrack } from "@/components/devtrack-provider"
+import { type Task, type StatusColumn, useDevTrack } from "@/components/devtrack-provider"
+import { toast } from "@/components/ui/use-toast"
 
 interface AddTaskDialogProps {
   open: boolean
@@ -23,51 +24,114 @@ interface AddTaskDialogProps {
 }
 
 export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
-  const { addTask, state } = useDevTrack() // Use state to get statusColumns
+  const { state, dispatch } = useDevTrack()
+  const [loading, setLoading] = useState(false)
+
+  // ✅ Filter status columns for the current active project
+  const availableStatusColumns: StatusColumn[] = useMemo(
+    () => state.statusColumns.filter((col: { projectId: any }) => col.projectId === state.activeProjectId),
+    [state.statusColumns, state.activeProjectId]
+  )
+
   const [formData, setFormData] = useState({
     title: "",
     description: "",
     assignee: "",
     dueDate: "",
-    status: state.statusColumns.find((col) => col.projectId === state.activeProjectId)?.id || "todo", // Default to first column of active project
+    statusId: availableStatusColumns[0]?.id || "",
     priority: "medium" as Task["priority"],
     tags: "",
     githubLink: "",
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  // ✅ Ensure statusId is always the first column if form resets
+ useEffect(() => {
+  if (open && availableStatusColumns.length) {
+    setFormData((prev) => ({
+      ...prev,
+      statusId: prev.statusId || availableStatusColumns[0].id,
+    }))
+  }
+}, [open, availableStatusColumns])
 
-    const newTask: Omit<Task, "id" | "projectId"> = {
-      // projectId is added by addTask
-      ...formData,
-      tags: formData.tags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean),
-    }
 
-    addTask(newTask)
-    onOpenChange(false)
-
-    // Reset form
+  const resetForm = () => {
     setFormData({
       title: "",
       description: "",
       assignee: "",
       dueDate: "",
-      status: state.statusColumns.find((col) => col.projectId === state.activeProjectId)?.id || "todo",
+      statusId: availableStatusColumns[0]?.id || "",
       priority: "medium",
       tags: "",
       githubLink: "",
     })
   }
 
-  // Filter status columns by active project
-  const availableStatusColumns = state.statusColumns.filter((col) => col.projectId === state.activeProjectId)
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!state.activeProjectId) return
+
+    setLoading(true)
+
+    // ✅ Calculate order for the selected status column
+    const tasksInStatus = state.tasks.filter((t: { statusId: string }) => t.statusId === formData.statusId)
+    const newOrder = tasksInStatus.length
+
+    const newTask = {
+      title: formData.title,
+      description: formData.description || null,
+      assignee: formData.assignee,
+      dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
+      statusId: formData.statusId,
+      projectId: state.activeProjectId,
+      priority: formData.priority,
+      tags: formData.tags
+        .split(",")
+        .map((tag: string) => tag.trim())
+        .filter(Boolean),
+      githubLink: formData.githubLink || null,
+      order: newOrder, // ✅ Places at the bottom of the chosen column
+    }
+
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newTask),
+      })
+
+      if (!res.ok) throw new Error("Failed to create task")
+
+      const { task } = await res.json()
+
+      // ✅ Update local state so the task immediately shows in UI
+      dispatch({ type: "ADD_TASK", payload: task })
+
+      toast({
+        title: "Task Created",
+        description: `"${task.title}" has been added to ${availableStatusColumns.find((c) => c.id === formData.statusId)?.name || "board"
+          }.`,
+      })
+
+      resetForm()
+      onOpenChange(false)
+    } catch (err) {
+      console.error(err)
+      toast({ title: "Error", description: "Failed to create task.", variant: "destructive" })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen) => {
+        onOpenChange(isOpen)
+        if (!isOpen) resetForm()
+      }}
+    >
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>Add New Task</DialogTitle>
@@ -75,6 +139,7 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Title */}
           <div className="space-y-2">
             <Label htmlFor="title">Title</Label>
             <Input
@@ -86,6 +151,7 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
             />
           </div>
 
+          {/* Description */}
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Textarea
@@ -97,6 +163,7 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
             />
           </div>
 
+          {/* Assignee + Due Date */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="assignee">Assignee</Label>
@@ -108,7 +175,6 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
                 required
               />
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="dueDate">Due Date</Label>
               <Input
@@ -121,32 +187,36 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
             </div>
           </div>
 
+          {/* Status Selection */}
           <div className="space-y-2">
-            <Label htmlFor="status">Status</Label>
+            <Label htmlFor="statusId">Status</Label>
             <Select
-              value={formData.status}
-              onValueChange={(value: string) => setFormData((prev) => ({ ...prev, status: value }))}
+              value={formData.statusId}
+              onValueChange={(value: string) => setFormData((prev) => ({ ...prev, statusId: value }))}
             >
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Select status" />
               </SelectTrigger>
               <SelectContent>
                 {availableStatusColumns
                   .sort((a, b) => a.order - b.order)
                   .map((column) => (
                     <SelectItem key={column.id} value={column.id}>
-                      {column.title}
+                      {column.name}
                     </SelectItem>
                   ))}
               </SelectContent>
             </Select>
           </div>
 
+          {/* Priority */}
           <div className="space-y-2">
             <Label htmlFor="priority">Priority</Label>
             <Select
               value={formData.priority}
-              onValueChange={(value: Task["priority"]) => setFormData((prev) => ({ ...prev, priority: value }))}
+              onValueChange={(value: Task["priority"]) =>
+                setFormData((prev) => ({ ...prev, priority: value }))
+              }
             >
               <SelectTrigger>
                 <SelectValue />
@@ -159,23 +229,25 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
             </Select>
           </div>
 
+          {/* Tags */}
           <div className="space-y-2">
             <Label htmlFor="tags">Tags</Label>
             <Input
               id="tags"
               value={formData.tags}
               onChange={(e) => setFormData((prev) => ({ ...prev, tags: e.target.value }))}
-              placeholder="frontend, backend, design (comma separated)"
+              placeholder="frontend, backend, design"
             />
           </div>
 
+          {/* GitHub Link */}
           <div className="space-y-2">
             <Label htmlFor="githubLink">GitHub Link (Optional)</Label>
             <Input
               id="githubLink"
               value={formData.githubLink}
               onChange={(e) => setFormData((prev) => ({ ...prev, githubLink: e.target.value }))}
-              placeholder="e.g., https://github.com/org/repo/pull/123"
+              placeholder="https://github.com/org/repo/pull/123"
             />
           </div>
 
@@ -183,7 +255,9 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit">Create Task</Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Saving..." : "Create Task"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

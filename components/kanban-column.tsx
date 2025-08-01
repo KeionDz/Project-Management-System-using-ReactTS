@@ -8,32 +8,34 @@ import { SortableTaskCard } from "@/components/sortable-task-card"
 import { Badge } from "@/components/ui/badge"
 import { StatusColumnSettings } from "@/components/status-column-settings"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils" // Import cn for conditional class joining
+import { cn } from "@/lib/utils"
 
 interface KanbanColumnProps {
   column: StatusColumn
   tasks: Task[]
   onTaskEdit: (task: Task) => void
-  activeDragItem: Task | null // New prop
-  overIdForPlaceholder: string | null // New prop
+  activeDragItem: Task | null
+  overIdForPlaceholder: string | null
 }
 
-export function KanbanColumn({ column, tasks, onTaskEdit, activeDragItem, overIdForPlaceholder }: KanbanColumnProps) {
+export function KanbanColumn({
+  column,
+  tasks,
+  onTaskEdit,
+  activeDragItem,
+  overIdForPlaceholder,
+}: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id, data: { type: "column" } })
   const [showAllTasks, setShowAllTasks] = useState(false)
 
   const displayedTasks = showAllTasks ? tasks : tasks.slice(0, 5)
   const hasMoreTasks = tasks.length > 5 && !showAllTasks
 
-  // Function to render tasks with a dynamic placeholder
   const renderTasksWithPlaceholder = () => {
     const elements = []
     let placeholderRendered = false
 
-    // Check if the active dragged item is currently over this column
-    const isDraggingOverThisColumn = isOver && activeDragItem && activeDragItem.status !== column.id
-
-    // Placeholder for empty column when a task is dragged over it
+    // Placeholder for empty column
     if (isOver && activeDragItem && tasks.length === 0) {
       elements.push(
         <div
@@ -49,12 +51,12 @@ export function KanbanColumn({ column, tasks, onTaskEdit, activeDragItem, overId
     for (let i = 0; i < displayedTasks.length; i++) {
       const task = displayedTasks[i]
 
-      // Render placeholder before a specific task if activeDragItem is hovering over it
+      // Dynamic placeholder before task
       if (
         activeDragItem &&
         overIdForPlaceholder === task.id &&
-        activeDragItem.id !== task.id && // Don't show placeholder for the task being dragged
-        activeDragItem.status !== column.id // Only show if moving from another column
+        activeDragItem.id !== task.id &&
+        activeDragItem.statusId !== column.id
       ) {
         elements.push(
           <div
@@ -70,14 +72,13 @@ export function KanbanColumn({ column, tasks, onTaskEdit, activeDragItem, overId
       elements.push(<SortableTaskCard key={task.id} task={task} onEdit={onTaskEdit} />)
     }
 
-    // Placeholder at the end of a non-empty column if dropped on column itself or after last task
+    // Placeholder at end of column
     if (
       activeDragItem &&
       !placeholderRendered &&
       isOver &&
-      (overIdForPlaceholder === column.id ||
-        (displayedTasks.length > 0 && overIdForPlaceholder === displayedTasks[displayedTasks.length - 1].id)) &&
-      activeDragItem.status !== column.id // Only show if moving from another column
+      overIdForPlaceholder === column.id &&
+      activeDragItem.statusId !== column.id
     ) {
       elements.push(
         <div
@@ -94,11 +95,10 @@ export function KanbanColumn({ column, tasks, onTaskEdit, activeDragItem, overId
 
   return (
     <div className="flex flex-col h-full group">
+      {/* Header */}
       <div className={`column-header ${column.color}`}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <h2 className="font-semibold text-sm">{column.title}</h2>
-          </div>
+          <h2 className="font-semibold text-sm">{column.name}</h2>
           <div className="flex items-center space-x-2">
             <Badge variant="secondary" className="text-xs">
               {tasks.length}
@@ -108,23 +108,23 @@ export function KanbanColumn({ column, tasks, onTaskEdit, activeDragItem, overId
         </div>
       </div>
 
+      {/* Droppable area */}
       <div
         ref={setNodeRef}
         className={cn(
-          "flex-1 space-y-2 p-1 min-h-[200px] rounded-lg transition-all duration-200", // Added transition for smooth highlight
+          "flex-1 space-y-2 p-1 min-h-[200px] rounded-lg transition-all duration-200",
           isOver
-            ? "border-2 border-dashed border-primary-foreground/50 bg-primary/5" // Highlight when dragged over
-            : "border-2 border-transparent", // Default transparent border
+            ? "border-2 border-dashed border-primary-foreground/50 bg-primary/5"
+            : "border-2 border-transparent",
         )}
       >
         <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {renderTasksWithPlaceholder()}
-          {tasks.length === 0 &&
-            !isOver && ( // Only show "Drop tasks here" when empty and not being dragged over
-              <div className="flex items-center justify-center h-32 border-2 border-dashed border-muted-foreground/25 rounded-lg">
-                <p className="text-sm text-muted-foreground">Drop tasks here</p>
-              </div>
-            )}
+          {tasks.length === 0 && !isOver && (
+            <div className="flex items-center justify-center h-32 border-2 border-dashed border-muted-foreground/25 rounded-lg">
+              <p className="text-sm text-muted-foreground">Drop tasks here</p>
+            </div>
+          )}
         </SortableContext>
 
         {hasMoreTasks && (

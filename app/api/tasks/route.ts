@@ -1,57 +1,106 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
+import prisma from "@/lib/db"
 
-// Simulate database
-let tasks = [
-  {
-    id: "1",
-    title: "Design System Setup",
-    description: "Create a comprehensive design system with components and tokens",
-    assignee: "Sarah Chen",
-    dueDate: "2024-02-15",
-    status: "todo",
-    priority: "high",
-    tags: ["design", "frontend"],
-    githubStatus: {
-      type: "pr",
-      url: "https://github.com/company/project/pull/123",
-      status: "open",
-      title: "feat: add design system components",
-    },
-  },
-]
+// Fetch tasks
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const projectId = searchParams.get("projectId")
 
-export async function GET() {
-  return NextResponse.json({ tasks })
+    if (!projectId) return NextResponse.json([])
+
+    const tasks = await prisma.task.findMany({
+      where: { projectId },
+      orderBy: { order: "asc" },
+    })
+
+    return NextResponse.json(tasks)
+  } catch (err) {
+    console.error("Error fetching tasks:", err)
+    return NextResponse.json([], { status: 500 })
+  }
 }
 
-export async function POST(request: NextRequest) {
-  const body = await request.json()
-  const newTask = {
-    id: Date.now().toString(),
-    ...body,
+// Create task
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { title, description, assignee, dueDate, statusId, projectId, priority, tags = [], githubLink } = body
+
+    if (!title || !assignee || !statusId || !projectId || !priority) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+
+    const order = await prisma.task.count({ where: { statusId } })
+
+    const task = await prisma.task.create({
+      data: {
+        title,
+        description: description || null,
+        assignee,
+        dueDate: dueDate ? new Date(dueDate) : null,
+        statusId,
+        projectId,
+        priority,
+        tags: Array.isArray(tags)
+          ? tags
+          : typeof tags === "string"
+          ? tags.split(",").map((t) => t.trim())
+          : [],
+        githubLink: githubLink || null,
+        order,
+      },
+    })
+
+    return NextResponse.json({ task })
+  } catch (error) {
+    console.error("POST /api/tasks Error:", error)
+    return NextResponse.json({ error: "Failed to create task" }, { status: 500 })
   }
-  tasks.push(newTask)
-  return NextResponse.json({ task: newTask })
 }
 
-export async function PUT(request: NextRequest) {
-  const body = await request.json()
-  const index = tasks.findIndex((task) => task.id === body.id)
-  if (index !== -1) {
-    tasks[index] = body
-    return NextResponse.json({ task: body })
+// Update task
+export async function PUT(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const { id, ...data } = body
+
+    if (!id) return NextResponse.json({ error: "Task ID required" }, { status: 400 })
+
+    const task = await prisma.task.update({
+      where: { id },
+      data: {
+        ...data,
+        dueDate: data.dueDate ? new Date(data.dueDate) : null,
+        description: data.description || null,
+        githubLink: data.githubLink || null,
+        tags: Array.isArray(data.tags)
+          ? data.tags
+          : typeof data.tags === "string"
+          ? data.tags.split(",").map((t: string) => t.trim())
+          : [],
+      },
+    })
+
+    return NextResponse.json({ task })
+  } catch (error) {
+    console.error("PUT /api/tasks Error:", error)
+    return NextResponse.json({ error: "Failed to update task" }, { status: 500 })
   }
-  return NextResponse.json({ error: "Task not found" }, { status: 404 })
 }
 
-export async function DELETE(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const id = searchParams.get("id")
+// Delete task
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const id = searchParams.get("id")
+    if (!id) return NextResponse.json({ error: "Task ID required" }, { status: 400 })
 
-  if (!id) {
-    return NextResponse.json({ error: "Task ID required" }, { status: 400 })
+    await prisma.task.delete({ where: { id } })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("DELETE /api/tasks Error:", error)
+    return NextResponse.json({ error: "Failed to delete task" }, { status: 500 })
   }
-
-  tasks = tasks.filter((task) => task.id !== id)
-  return NextResponse.json({ success: true })
 }

@@ -30,5 +30,36 @@ model Project {
   description String?                         // ✅ Make optional
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt             // ✅ Add updatedAt for consistency
+  tasks       Task[]
+  statuses    StatusColumn[]
+
 }
 
+model StatusColumn {
+  id        String   @id @default(cuid())
+  name      String
+  order     Int       // Column position in the board
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id])
+  tasks     Task[]
+  
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  priority    String   // "low" | "medium" | "high"
+  dueDate     DateTime?
+  tags        String[] @default([]) // Postgres array for tags
+  assignee    String
+  githubLink  String?
+
+  order     Int
+  statusId  String
+  status    StatusColumn @relation(fields: [statusId], references: [id])
+  projectId String
+  project   Project      @relation(fields: [projectId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

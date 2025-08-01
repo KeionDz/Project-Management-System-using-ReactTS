@@ -10,15 +10,16 @@ export interface Task {
   description: string
   assignee: string
   dueDate: string
-  status: string // Changed from union type to string for flexibility
+  status: string
+  priority: "low" | "medium" | "high"
+  tags: string[]
+  order: number // ✅ NEW
   githubStatus?: {
     type: "pr" | "commit"
     url: string
     status: "open" | "merged" | "closed"
     title: string
   }
-  priority: "low" | "medium" | "high"
-  tags: string[]
 }
 
 export interface StatusColumn {
@@ -40,7 +41,8 @@ type TaskAction =
   | { type: "ADD_TASK"; payload: Task }
   | { type: "UPDATE_TASK"; payload: Task }
   | { type: "DELETE_TASK"; payload: string }
-  | { type: "MOVE_TASK"; payload: { id: string; status: string } }
+  | { type: "MOVE_TASK"; payload: { id: string; status: string; overId?: string } } // ✅ added overId
+  | { type: "REORDER_TASKS"; payload: Task[] } // ✅ new
   | { type: "ADD_STATUS_COLUMN"; payload: StatusColumn }
   | { type: "UPDATE_STATUS_COLUMN"; payload: StatusColumn }
   | { type: "DELETE_STATUS_COLUMN"; payload: string }
@@ -58,7 +60,7 @@ const taskReducer = (state: TaskState, action: TaskAction): TaskState => {
     case "SET_TASKS":
       return { ...state, tasks: action.payload }
     case "SET_STATUS_COLUMNS":
-      return { ...state, statusColumns: action.payload }
+      return { ...state, statusColumns: action.payload.sort((a, b) => a.order - b.order) }
     case "ADD_TASK":
       return { ...state, tasks: [...state.tasks, action.payload] }
     case "UPDATE_TASK":
@@ -71,13 +73,38 @@ const taskReducer = (state: TaskState, action: TaskAction): TaskState => {
         ...state,
         tasks: state.tasks.filter((task) => task.id !== action.payload),
       }
-    case "MOVE_TASK":
-      return {
-        ...state,
-        tasks: state.tasks.map((task) =>
-          task.id === action.payload.id ? { ...task, status: action.payload.status } : task,
-        ),
+    case "MOVE_TASK": {
+      const { id, status, overId } = action.payload
+      const movingTask = state.tasks.find((t) => t.id === id)
+      if (!movingTask) return state
+
+      // Remove the task first
+      let remainingTasks = state.tasks.filter((t) => t.id !== id)
+
+      // Take all tasks in the target column
+      let targetColumnTasks = remainingTasks.filter((t) => t.status === status)
+
+      // Create updated moving task
+      const movedTask: Task = { ...movingTask, status }
+
+      // Insert task at new position
+      if (overId) {
+        const overIndex = targetColumnTasks.findIndex((t) => t.id === overId)
+        if (overIndex >= 0) targetColumnTasks.splice(overIndex, 0, movedTask)
+        else targetColumnTasks.push(movedTask)
+      } else {
+        targetColumnTasks.push(movedTask)
       }
+
+      // Recalculate order for tasks in that column
+      targetColumnTasks = targetColumnTasks.map((t, i) => ({ ...t, order: i }))
+
+      // Merge with tasks from other columns
+      const otherTasks = remainingTasks.filter((t) => t.status !== status)
+      return { ...state, tasks: [...otherTasks, ...targetColumnTasks] }
+    }
+    case "REORDER_TASKS":
+      return { ...state, tasks: action.payload }
     case "ADD_STATUS_COLUMN":
       return {
         ...state,
@@ -88,22 +115,18 @@ const taskReducer = (state: TaskState, action: TaskAction): TaskState => {
         ...state,
         statusColumns: state.statusColumns.map((col) => (col.id === action.payload.id ? action.payload : col)),
       }
-    case "DELETE_STATUS_COLUMN":
-      return {
-        ...state,
-        statusColumns: state.statusColumns.filter((col) => col.id !== action.payload),
-        // Move tasks from deleted column to first available column
-        tasks: state.tasks.map((task) =>
-          task.status === action.payload
-            ? { ...task, status: state.statusColumns.find((col) => col.id !== action.payload)?.id || "todo" }
-            : task,
-        ),
-      }
+    case "DELETE_STATUS_COLUMN": {
+      const newColumns = state.statusColumns.filter((col) => col.id !== action.payload)
+      const fallbackColumnId = newColumns[0]?.id || "todo"
+
+      const movedTasks = state.tasks.map((task) =>
+        task.status === action.payload ? { ...task, status: fallbackColumnId, order: 0 } : task,
+      )
+
+      return { ...state, statusColumns: newColumns, tasks: movedTasks }
+    }
     case "REORDER_STATUS_COLUMNS":
-      return {
-        ...state,
-        statusColumns: action.payload,
-      }
+      return { ...state, statusColumns: action.payload.map((col, i) => ({ ...col, order: i })) }
     case "SET_LOADING":
       return { ...state, loading: action.payload }
     default:
@@ -114,10 +137,11 @@ const taskReducer = (state: TaskState, action: TaskAction): TaskState => {
 const TaskContext = createContext<{
   state: TaskState
   dispatch: React.Dispatch<TaskAction>
-  addTask: (task: Omit<Task, "id">) => void
+  addTask: (task: Omit<Task, "id" | "order">) => void
   updateTask: (task: Task) => void
   deleteTask: (id: string) => void
-  moveTask: (id: string, status: string) => void
+  moveTask: (id: string, status: string, overId?: string) => void
+  reorderTasks: (tasks: Task[]) => void
   addStatusColumn: (column: Omit<StatusColumn, "id">) => void
   updateStatusColumn: (column: StatusColumn) => void
   deleteStatusColumn: (id: string) => void
@@ -128,7 +152,7 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(taskReducer, initialState)
   const { toast } = useToast()
 
-  // Initialize with default status columns
+  // Initialize columns and dummy tasks
   useEffect(() => {
     const defaultColumns: StatusColumn[] = [
       { id: "todo", title: "To Do", color: "bg-slate-100 dark:bg-slate-800", order: 0 },
@@ -147,12 +171,7 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
         status: "todo",
         priority: "high",
         tags: ["design", "frontend"],
-        githubStatus: {
-          type: "pr",
-          url: "https://github.com/company/project/pull/123",
-          status: "open",
-          title: "feat: add design system components",
-        },
+        order: 0,
       },
       {
         id: "2",
@@ -163,155 +182,60 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
         status: "in-progress",
         priority: "high",
         tags: ["backend", "security"],
-        githubStatus: {
-          type: "pr",
-          url: "https://github.com/company/project/pull/124",
-          status: "open",
-          title: "feat: implement JWT authentication",
-        },
-      },
-      {
-        id: "3",
-        title: "User Dashboard",
-        description: "Create responsive user dashboard with analytics",
-        assignee: "Alex Rivera",
-        dueDate: "2024-02-08",
-        status: "done",
-        priority: "medium",
-        tags: ["frontend", "dashboard"],
-        githubStatus: {
-          type: "pr",
-          url: "https://github.com/company/project/pull/122",
-          status: "merged",
-          title: "feat: user dashboard implementation",
-        },
-      },
-      {
-        id: "4",
-        title: "Database Migration",
-        description: "Migrate user data to new schema structure",
-        assignee: "Emma Davis",
-        dueDate: "2024-02-12",
-        status: "todo",
-        priority: "medium",
-        tags: ["database", "migration"],
-      },
-      {
-        id: "5",
-        title: "Mobile Responsiveness",
-        description: "Ensure all components work perfectly on mobile devices",
-        assignee: "James Wilson",
-        dueDate: "2024-02-18",
-        status: "in-progress",
-        priority: "medium",
-        tags: ["frontend", "mobile"],
+        order: 0,
       },
     ]
     dispatch({ type: "SET_TASKS", payload: dummyTasks })
   }, [])
 
-  // Simulate real-time GitHub updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Simulate PR merge moving task to done
-      const tasksWithOpenPRs = state.tasks.filter(
-        (task) => task.githubStatus?.status === "open" && task.status !== "done",
-      )
-
-      if (tasksWithOpenPRs.length > 0 && Math.random() > 0.95) {
-        const randomTask = tasksWithOpenPRs[Math.floor(Math.random() * tasksWithOpenPRs.length)]
-        const updatedTask = {
-          ...randomTask,
-          status: "done" as const,
-          githubStatus: {
-            ...randomTask.githubStatus!,
-            status: "merged" as const,
-          },
-        }
-        dispatch({ type: "UPDATE_TASK", payload: updatedTask })
-        toast({
-          title: "Task Auto-Updated",
-          description: `"${randomTask.title}" moved to Done - PR merged!`,
-        })
-      }
-    }, 5000)
-
-    return () => clearInterval(interval)
-  }, [state.tasks, toast])
-
-  const addTask = (taskData: Omit<Task, "id">) => {
-    const newTask: Task = {
-      ...taskData,
-      id: Date.now().toString(),
-    }
+  // Actions
+  const addTask = (taskData: Omit<Task, "id" | "order">) => {
+    const columnTasks = state.tasks.filter((t) => t.status === taskData.status)
+    const newTask: Task = { ...taskData, id: Date.now().toString(), order: columnTasks.length }
     dispatch({ type: "ADD_TASK", payload: newTask })
-    toast({
-      title: "Task Created",
-      description: `"${newTask.title}" has been added to the board.`,
-    })
+    toast({ title: "Task Created", description: `"${newTask.title}" has been added to the board.` })
   }
 
   const updateTask = (task: Task) => {
     dispatch({ type: "UPDATE_TASK", payload: task })
-    toast({
-      title: "Task Updated",
-      description: `"${task.title}" has been updated.`,
-    })
+    toast({ title: "Task Updated", description: `"${task.title}" has been updated.` })
   }
 
   const deleteTask = (id: string) => {
     const task = state.tasks.find((t) => t.id === id)
     dispatch({ type: "DELETE_TASK", payload: id })
-    toast({
-      title: "Task Deleted",
-      description: `"${task?.title}" has been removed from the board.`,
-    })
+    toast({ title: "Task Deleted", description: `"${task?.title}" has been removed.` })
   }
 
-  const moveTask = (id: string, status: string) => {
-    dispatch({ type: "MOVE_TASK", payload: { id, status } })
+  const moveTask = (id: string, status: string, overId?: string) => {
+    dispatch({ type: "MOVE_TASK", payload: { id, status, overId } })
+  }
+
+  const reorderTasks = (tasks: Task[]) => {
+    dispatch({ type: "REORDER_TASKS", payload: tasks })
   }
 
   const addStatusColumn = (columnData: Omit<StatusColumn, "id">) => {
-    const newColumn: StatusColumn = {
-      ...columnData,
-      id: Date.now().toString(),
-    }
+    const newColumn: StatusColumn = { ...columnData, id: Date.now().toString() }
     dispatch({ type: "ADD_STATUS_COLUMN", payload: newColumn })
-    toast({
-      title: "Status Column Added",
-      description: `"${newColumn.title}" column has been added to the board.`,
-    })
+    toast({ title: "Status Column Added", description: `"${newColumn.title}" column added.` })
   }
 
   const updateStatusColumn = (column: StatusColumn) => {
     dispatch({ type: "UPDATE_STATUS_COLUMN", payload: column })
-    toast({
-      title: "Status Column Updated",
-      description: `"${column.title}" column has been updated.`,
-    })
+    toast({ title: "Status Column Updated", description: `"${column.title}" updated.` })
   }
 
   const deleteStatusColumn = (id: string) => {
-    const column = state.statusColumns.find((c) => c.id === id)
     if (state.statusColumns.length <= 1) {
-      toast({
-        title: "Cannot Delete",
-        description: "You must have at least one status column.",
-        variant: "destructive",
-      })
+      toast({ title: "Cannot Delete", description: "You must have at least one status column.", variant: "destructive" })
       return
     }
     dispatch({ type: "DELETE_STATUS_COLUMN", payload: id })
-    toast({
-      title: "Status Column Deleted",
-      description: `"${column?.title}" column has been removed from the board.`,
-    })
   }
 
   const reorderStatusColumns = (columns: StatusColumn[]) => {
-    const reorderedColumns = columns.map((col, index) => ({ ...col, order: index }))
-    dispatch({ type: "REORDER_STATUS_COLUMNS", payload: reorderedColumns })
+    dispatch({ type: "REORDER_STATUS_COLUMNS", payload: columns })
   }
 
   return (
@@ -323,6 +247,7 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
         updateTask,
         deleteTask,
         moveTask,
+        reorderTasks,
         addStatusColumn,
         updateStatusColumn,
         deleteStatusColumn,
@@ -336,8 +261,6 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
 
 export const useTask = () => {
   const context = useContext(TaskContext)
-  if (!context) {
-    throw new Error("useTask must be used within a TaskProvider")
-  }
+  if (!context) throw new Error("useTask must be used within a TaskProvider")
   return context
 }

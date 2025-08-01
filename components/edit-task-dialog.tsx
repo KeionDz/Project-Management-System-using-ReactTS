@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { type Task, useDevTrack } from "@/components/devtrack-provider" // Import useDevTrack
+import { type Task, useDevTrack } from "@/components/devtrack-provider"
 
 interface EditTaskDialogProps {
   open: boolean
@@ -25,45 +25,53 @@ interface EditTaskDialogProps {
 }
 
 export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskDialogProps) {
-  const { state } = useDevTrack() // Use state to get statusColumns
+  const { state } = useDevTrack()
+
   const [formData, setFormData] = useState({
     title: "",
     description: "",
     assignee: "",
     dueDate: "",
-    status: "",
+    statusId: "",
     priority: "medium" as Task["priority"],
     tags: "",
     githubLink: "",
   })
 
+  // Populate form when editing a task
   useEffect(() => {
     if (task) {
       setFormData({
         title: task.title,
-        description: task.description,
+        description: task.description ?? "",
         assignee: task.assignee,
-        dueDate: task.dueDate,
-        status: task.status,
+        dueDate: task.dueDate ?? "",
+        statusId: task.statusId,
         priority: task.priority,
         tags: task.tags.join(", "),
-        githubLink: task.githubLink || "",
+        githubLink: task.githubLink ?? "",
       })
     }
   }, [task])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-
     if (!task) return
 
     const updatedTask: Task = {
       ...task,
-      ...formData,
+      title: formData.title,
+      description: formData.description || undefined,
+      assignee: formData.assignee,
+      // ✅ Keep as string for frontend
+      dueDate: formData.dueDate || undefined,
+      statusId: formData.statusId,
+      priority: formData.priority,
       tags: formData.tags
         .split(",")
         .map((tag) => tag.trim())
         .filter(Boolean),
+      githubLink: formData.githubLink || undefined,
     }
 
     onUpdate(updatedTask)
@@ -72,8 +80,9 @@ export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskD
 
   if (!task) return null
 
-  // Filter status columns by active project
-  const availableStatusColumns = state.statusColumns.filter((col) => col.projectId === state.activeProjectId)
+  const availableStatusColumns = state.statusColumns.filter(
+    (col) => col.projectId === state.activeProjectId
+  )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -84,6 +93,7 @@ export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskD
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Title */}
           <div className="space-y-2">
             <Label htmlFor="title">Title</Label>
             <Input
@@ -95,6 +105,7 @@ export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskD
             />
           </div>
 
+          {/* Description */}
           <div className="space-y-2">
             <Label htmlFor="description">Description</Label>
             <Textarea
@@ -106,6 +117,7 @@ export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskD
             />
           </div>
 
+          {/* Assignee + Due Date */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="assignee">Assignee</Label>
@@ -125,37 +137,40 @@ export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskD
                 type="date"
                 value={formData.dueDate}
                 onChange={(e) => setFormData((prev) => ({ ...prev, dueDate: e.target.value }))}
-                required
               />
             </div>
           </div>
 
+          {/* Status */}
           <div className="space-y-2">
             <Label htmlFor="status">Status</Label>
             <Select
-              value={formData.status}
-              onValueChange={(value: string) => setFormData((prev) => ({ ...prev, status: value }))}
+              value={formData.statusId}
+              onValueChange={(value) => setFormData((prev) => ({ ...prev, statusId: value }))}
             >
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Select status" />
               </SelectTrigger>
               <SelectContent>
                 {availableStatusColumns
                   .sort((a, b) => a.order - b.order)
                   .map((column) => (
                     <SelectItem key={column.id} value={column.id}>
-                      {column.title}
+                      {column.name}
                     </SelectItem>
                   ))}
               </SelectContent>
             </Select>
           </div>
 
+          {/* Priority */}
           <div className="space-y-2">
             <Label htmlFor="priority">Priority</Label>
             <Select
               value={formData.priority}
-              onValueChange={(value: Task["priority"]) => setFormData((prev) => ({ ...prev, priority: value }))}
+              onValueChange={(value: Task["priority"]) =>
+                setFormData((prev) => ({ ...prev, priority: value }))
+              }
             >
               <SelectTrigger>
                 <SelectValue />
@@ -168,6 +183,7 @@ export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskD
             </Select>
           </div>
 
+          {/* Tags */}
           <div className="space-y-2">
             <Label htmlFor="tags">Tags</Label>
             <Input
@@ -178,6 +194,7 @@ export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskD
             />
           </div>
 
+          {/* GitHub Link */}
           <div className="space-y-2">
             <Label htmlFor="githubLink">GitHub Link (Optional)</Label>
             <Input

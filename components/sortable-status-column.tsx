@@ -3,16 +3,16 @@
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import type { Task, StatusColumn } from "@/components/devtrack-provider"
-import { KanbanColumn } from "@/components/kanban-column"
-import { GripVertical } from "lucide-react" // Import GripVertical for the drag handle
+import { KanbanColumn } from "@/components/kanban-column" // ✅ Named import
+import { GripVertical } from "lucide-react"
 
 interface SortableStatusColumnProps {
   column: StatusColumn
   tasks: Task[]
   isReorderingColumns: boolean
   onTaskEdit: (task: Task) => void
-  activeDragItem: Task | null // New prop
-  overIdForPlaceholder: string | null // New prop
+  activeDragItem: Task | null
+  overIdForPlaceholder: string | null
 }
 
 export function SortableStatusColumn({
@@ -25,10 +25,7 @@ export function SortableStatusColumn({
 }: SortableStatusColumnProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
-    data: {
-      type: "column",
-      column,
-    },
+    data: { type: "column", column },
     disabled: !isReorderingColumns,
   })
 
@@ -59,8 +56,8 @@ export function SortableStatusColumn({
         column={column}
         tasks={tasks}
         onTaskEdit={onTaskEdit}
-        activeDragItem={activeDragItem} // Pass down
-        overIdForPlaceholder={overIdForPlaceholder} // Pass down
+        activeDragItem={activeDragItem}
+        overIdForPlaceholder={overIdForPlaceholder}
       />
     </div>
   )

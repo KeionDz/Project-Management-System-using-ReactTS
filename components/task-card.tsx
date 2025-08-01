@@ -3,14 +3,14 @@
 import type { Task } from "@/components/devtrack-provider"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Calendar, GitPullRequest, ExternalLink, MoreHorizontal, Trash2, GripVertical } from "lucide-react"
+import { Calendar, GitPullRequest, ExternalLink, MoreHorizontal, Trash2, GripVertical, Pencil } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useDevTrack } from "@/components/devtrack-provider"
 import type { DraggableAttributes } from "@dnd-kit/core"
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { cn } from "@/lib/utils" // Import cn for conditional class joining
+import { cn } from "@/lib/utils"
 
 const getPriorityColor = (priority: Task["priority"]) => {
   switch (priority) {
@@ -23,35 +23,43 @@ const getPriorityColor = (priority: Task["priority"]) => {
   }
 }
 
-const getInitials = (name: string) => {
-  return name
+const getInitials = (name: string) =>
+  name
     .split(" ")
     .map((n) => n[0])
     .join("")
     .toUpperCase()
-}
 
 interface TaskCardProps {
   task: Task
   onEdit: (task: Task) => void
   attributes?: DraggableAttributes
   listeners?: SyntheticListenerMap
-  className?: string // Added className prop
+  className?: string
 }
 
 export function TaskCard({ task, onEdit, attributes, listeners, className }: TaskCardProps) {
   const { deleteTask } = useDevTrack()
 
   return (
-    <Card className={cn("task-card cursor-pointer p-3", className)} onClick={() => onEdit(task)}>
-      <CardHeader className="pb-2">
+    <Card
+      className={cn(
+        "group task-card cursor-pointer p-3 hover:shadow-md transition-shadow duration-200",
+        className
+      )}
+      onClick={() => onEdit(task)}
+    >
+      <CardHeader className="p-0 mb-2">
         <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <h3 className="font-semibold text-sm leading-tight mb-2">{task.title}</h3>
-            <p className="text-xs text-muted-foreground line-clamp-2">{task.description}</p>
+          <div className="flex-1 min-w-0 pr-2">
+            <h3 className="font-semibold text-sm leading-tight line-clamp-1">{task.title}</h3>
+            {task.description && (
+              <p className="text-xs text-muted-foreground line-clamp-2">{task.description}</p>
+            )}
           </div>
-          <div className="flex items-center space-x-1">
-            {/* Drag Handle */}
+
+          <div className="flex items-center space-x-1 shrink-0">
+            {/* ✅ Drag Handle Only */}
             <Button
               variant="ghost"
               size="icon"
@@ -60,9 +68,10 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
               {...attributes}
               {...listeners}
             >
-              <GripVertical className="h-3 w-3" /> {/* Using PR icon as drag handle */}
+              <GripVertical className="h-3 w-3" />
             </Button>
-            {/* More Options Dropdown */}
+
+            {/* ✅ Dropdown Menu (No listeners to avoid infinite loop) */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -76,14 +85,21 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onEdit(task)
+                  }}
+                >
+                  <Pencil className="mr-2 h-3 w-3" /> Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   className="text-red-600 dark:text-red-400"
                   onClick={(e) => {
                     e.stopPropagation()
                     deleteTask(task.id)
                   }}
                 >
-                  <Trash2 className="mr-2 h-3 w-3" />
-                  Delete
+                  <Trash2 className="mr-2 h-3 w-3" /> Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -91,9 +107,10 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
         </div>
       </CardHeader>
 
-      <CardContent className="pt-0 space-y-2">
+      <CardContent className="p-0 space-y-2">
+        {/* Tags */}
         {task.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-2">
+          <div className="flex flex-wrap gap-1">
             {task.tags.map((tag) => (
               <Badge key={tag} variant="secondary" className="text-xs px-2 py-0.5">
                 {tag}
@@ -102,14 +119,20 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
           </div>
         )}
 
+        {/* Priority + Due Date */}
         <div className="flex items-center justify-between text-xs">
-          <Badge className={`px-2 py-0.5 ${getPriorityColor(task.priority)}`}>{task.priority.toUpperCase()}</Badge>
-          <div className="flex items-center text-muted-foreground">
-            <Calendar className="mr-1 h-3 w-3" />
-            {task.dueDate}
-          </div>
+          <Badge className={cn("px-2 py-0.5", getPriorityColor(task.priority))}>
+            {task.priority.toUpperCase()}
+          </Badge>
+          {task.dueDate && (
+            <div className="flex items-center text-muted-foreground">
+              <Calendar className="mr-1 h-3 w-3" />
+              {new Date(task.dueDate).toLocaleDateString()}
+            </div>
+          )}
         </div>
 
+        {/* GitHub Link */}
         {task.githubLink && (
           <div className="flex items-center justify-between p-2 bg-muted/50 rounded-lg">
             <div className="flex items-center space-x-2">
@@ -117,19 +140,27 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
               <span className="text-xs font-medium">GitHub PR</span>
             </div>
             <Button variant="ghost" size="icon" className="h-6 w-6" asChild>
-              <a href={task.githubLink} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+              <a
+                href={task.githubLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <ExternalLink className="h-3 w-3" />
               </a>
             </Button>
           </div>
         )}
 
+        {/* Assignee */}
         <div className="flex items-center space-x-2">
           <Avatar className="h-6 w-6">
-            <AvatarImage src={`/placeholder.svg?height=24&width=24&text=${getInitials(task.assignee)}`} />
+            <AvatarImage
+              src={`/placeholder.svg?height=24&width=24&text=${getInitials(task.assignee)}`}
+            />
             <AvatarFallback className="text-xs">{getInitials(task.assignee)}</AvatarFallback>
           </Avatar>
-          <span className="text-xs text-muted-foreground">{task.assignee}</span>
+          <span className="text-xs text-muted-foreground truncate">{task.assignee}</span>
         </div>
       </CardContent>
     </Card>

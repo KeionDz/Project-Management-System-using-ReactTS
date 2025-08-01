@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { MoreHorizontal, Edit, Trash2 } from "lucide-react"
 import { type StatusColumn, useDevTrack } from "@/components/devtrack-provider"
+import { toast } from "@/components/ui/use-toast"
 
 interface StatusColumnSettingsProps {
   column: StatusColumn
@@ -41,36 +42,81 @@ const colorOptions = [
 export function StatusColumnSettings({ column }: StatusColumnSettingsProps) {
   const { updateStatusColumn, deleteStatusColumn, state } = useDevTrack()
   const [showEditDialog, setShowEditDialog] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
-    title: column.title,
+    name: column.name,
     color: column.color,
   })
 
   const handleEdit = () => {
-    setFormData({ title: column.title, color: column.color })
+    setFormData({ name: column.name, color: column.color })
     setShowEditDialog(true)
   }
 
-  const handleSave = () => {
-    updateStatusColumn({
-      ...column,
-      ...formData,
+  const handleSave = async () => {
+    setLoading(true)
+    try {
+      // Update DB first
+      const res = await fetch("/api/status", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: column.id, name: formData.name }),
+      })
+
+      if (!res.ok) throw new Error("Failed to update column")
+      const updated = await res.json()
+
+      // Update local state
+      updateStatusColumn({
+        ...column,
+        name: updated.name,
+        color: formData.color,
+      })
+
+      toast({ title: "Column Updated", description: `"${formData.name}" has been updated.` })
+      setShowEditDialog(false)
+    } catch (err) {
+      console.error(err)
+      toast({ title: "Error", description: "Failed to update column.", variant: "destructive" })
+    } finally {
+      setLoading(false)
+    }
+  }
+const handleDelete = async () => {
+  const canDelete =
+    state.statusColumns.filter(
+      (c: StatusColumn) => c.projectId === state.activeProjectId
+    ).length > 1
+
+  if (!canDelete) {
+    toast({
+      title: "Cannot Delete",
+      description: "At least one column is required.",
+      variant: "destructive",
     })
-    setShowEditDialog(false)
+    return
   }
 
-  const handleDelete = () => {
-    deleteStatusColumn(column.id)
-  }
+  // ✅ Only call provider function (it handles API + state)
+  await deleteStatusColumn(column.id)
 
-  // Check if there's more than one column for the active project
-  const canDelete = state.statusColumns.filter((c) => c.projectId === state.activeProjectId).length > 1
+  toast({
+    title: "Column Deleted",
+    description: `"${column.name}" has been removed.`,
+  })
+}
+
+
 
   return (
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+          >
             <MoreHorizontal className="h-3 w-3" />
           </Button>
         </DropdownMenuTrigger>
@@ -82,7 +128,6 @@ export function StatusColumnSettings({ column }: StatusColumnSettingsProps) {
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={handleDelete}
-            disabled={!canDelete}
             className="text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400"
           >
             <Trash2 className="mr-2 h-3 w-3" />
@@ -95,17 +140,17 @@ export function StatusColumnSettings({ column }: StatusColumnSettingsProps) {
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Edit Status Column</DialogTitle>
-            <DialogDescription>Update the title and color of your status column.</DialogDescription>
+            <DialogDescription>Update the name and color of this column.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-title">Column Title</Label>
+              <Label htmlFor="edit-name">Column Name</Label>
               <Input
-                id="edit-title"
-                value={formData.title}
-                onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
-                placeholder="Column title"
+                id="edit-name"
+                value={formData.name}
+                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="Column name"
               />
             </div>
 
@@ -135,7 +180,9 @@ export function StatusColumnSettings({ column }: StatusColumnSettingsProps) {
             <Button type="button" variant="outline" onClick={() => setShowEditDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSave}>Save Changes</Button>
+            <Button onClick={handleSave} disabled={loading}>
+              {loading ? "Saving..." : "Save Changes"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

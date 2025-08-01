@@ -47,21 +47,23 @@ export default function ProjectsPage() {
     setActiveProject,
     dispatch,
   } = useDevTrack()
-const { state: { user } } = useAuth() // ✅ get logged-in user
+  const {
+    state: { user },
+  } = useAuth() // ✅ get logged-in user
 
   const [loading, setLoading] = useState(true)
   const [showProjectDialog, setShowProjectDialog] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const router = useRouter()
 
+  // Initial fetch
   useEffect(() => {
     const fetchProjects = async () => {
       const res = await fetch("/api/projects")
-      const data = await res.json()
+      const data: Project[] = await res.json()
       dispatch({ type: "SET_PROJECTS", payload: data })
       setLoading(false)
     }
-
     fetchProjects()
   }, [dispatch])
 
@@ -72,101 +74,75 @@ const { state: { user } } = useAuth() // ✅ get logged-in user
 
   const handleSelectProject = (projectId: string) => {
     setActiveProject(projectId)
-    router.push("/board")
+    router.push(`/board/${projectId}`)
   }
 
-  const handleDeleteProject = async (projectId: string) => {
-    const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" })
+  // ✅ Live delete with optimistic UI
+  // Replace handleDeleteProject with:
+const handleDeleteProject = async (projectId: string) => {
+  await deleteProject(projectId) // ✅ provider handles UI + toast
+}
 
-    if (res.ok) {
-      deleteProject(projectId)
-    } else {
-      const error = await res.json()
-      console.error("❌ Failed to delete project:", error)
+
+
+  const handleCreateProject = async (projectData: Partial<Project>) => {
+    // ✅ Only admins can create
+    if (!user || user.role !== "ADMIN") {
       toast({
-        title: "Error deleting project",
-        description: error.error || "Something went wrong.",
+        title: "Permission Denied",
+        description: "Only admins can create projects.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...projectData, userId: user.id }),
+      })
+
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error?.error || "Failed to create project.")
+      }
+
+      const savedProject: Project = await res.json()
+      addProject(savedProject)
+
+      toast({
+        title: "Project Created",
+        description: `“${projectData.name}” has been added.`,
+      })
+
+      setShowProjectDialog(false)
+    } catch (err) {
+      console.error("❌ Create error:", err)
+      toast({
+        title: "Error creating project",
+        description: (err as Error).message || "Something went wrong.",
         variant: "destructive",
       })
     }
   }
 
-  const handleCreateProject = async (projectData: Partial<Project>) => {
-  // ✅ Only admins can create
-  if (!user || user.role !== "ADMIN") {
-    toast({
-      title: "Permission Denied",
-      description: "Only admins can create projects.",
-      variant: "destructive",
-    })
-    return
-  }
+ const handleUpdateProject = async (projectData: Partial<Project>) => {
+  if (!projectData.id) return
+  await updateProject(projectData as Project) // ✅ delegate to provider
+  setEditingProject(null)
+  setShowProjectDialog(false)
+}
 
-  try {
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...projectData, userId: user.id }), // ✅ send userId for server validation
-    })
 
-    if (!res.ok) {
-      const error = await res.json()
-      throw new Error(error?.error || "Failed to create project.")
-    }
-
-    const savedProject: Project = await res.json()
-    addProject(savedProject)
-
-    const updatedProjectsRes = await fetch("/api/projects")
-    const updatedProjects: Project[] = await updatedProjectsRes.json()
-    dispatch({ type: "SET_PROJECTS", payload: updatedProjects })
-
-    toast({
-      title: "Project Created",
-      description: `“${projectData.name}” has been added.`,
-    })
-
-    setShowProjectDialog(false)
-  } catch (err) {
-    console.error("❌ Create error:", err)
-    toast({
-      title: "Error creating project",
-      description: (err as Error).message || "Something went wrong.",
-      variant: "destructive",
-    })
+  const handleSaveProject = async (projectData: Partial<Project>) => {
+  if (projectData.id) {
+    await handleUpdateProject(projectData)
+  } else {
+    await handleCreateProject(projectData)
   }
 }
 
-  const handleUpdateProject = async (projectData: Partial<Project>) => {
-    try {
-      const res = await fetch(`/api/projects/${projectData.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: projectData.name,
-          description: projectData.description,
-        }),
-      })
-
-      if (!res.ok) throw new Error("Failed to update project.")
-      const savedProject: Project = await res.json()
-
-      updateProject(savedProject)
-
-      setEditingProject(null)
-      setShowProjectDialog(false)
-    } catch (err) {
-      console.error("❌ Update error:", err)
-    }
-  }
-
-  const handleSaveProject = async (projectData: Partial<Project>) => {
-    if (projectData.id) {
-      await handleUpdateProject(projectData)
-    } else {
-      await handleCreateProject(projectData)
-    }
-  }
 
   return (
     <ProtectedRoute>
@@ -183,17 +159,20 @@ const { state: { user } } = useAuth() // ✅ get logged-in user
 
             {/* ✅ Button always visible */}
             <Button
-  onClick={() => {
-    setEditingProject(null)
-    setShowProjectDialog(true)
-  }}
-  className={`shadow-lg ${user?.role !== "ADMIN" ? "bg-transparent hover:bg-white/10 text-muted-foreground shadow-none border border-white/20" : ""}`}
-  disabled={user?.role !== "ADMIN"} // ✅ Disable for normal users
->
-  <Plus className="mr-2 h-4 w-4" />
-  New Project
-</Button>
-
+              onClick={() => {
+                setEditingProject(null)
+                setShowProjectDialog(true)
+              }}
+              className={`shadow-lg ${
+                user?.role !== "ADMIN"
+                  ? "bg-transparent hover:bg-white/10 text-muted-foreground shadow-none border border-white/20"
+                  : ""
+              }`}
+              disabled={user?.role !== "ADMIN"} // ✅ Disable for normal users
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New Project
+            </Button>
           </div>
 
           {loading ? (
@@ -205,7 +184,7 @@ const { state: { user } } = useAuth() // ✅ get logged-in user
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {state.projects.map((project) => (
+              {state.projects.map((project: Project) => ( // ✅ typed
                 <Card
                   key={project.id}
                   className="hover:shadow-md transition-shadow"
@@ -228,15 +207,15 @@ const { state: { user } } = useAuth() // ✅ get logged-in user
                             Edit
                           </DropdownMenuItem>
                           {user?.role === "ADMIN" && (
-    <DropdownMenuItem
-      onClick={() => handleDeleteProject(project.id)}
-      className="text-red-600 dark:text-red-400"
-      disabled={state.projects.length <= 1}
-    >
-      <Trash2 className="mr-2 h-4 w-4" />
-      Delete
-    </DropdownMenuItem>
-  )}
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteProject(project.id)}
+                              className="text-red-600 dark:text-red-400"
+                              disabled={state.projects.length <= 1}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
