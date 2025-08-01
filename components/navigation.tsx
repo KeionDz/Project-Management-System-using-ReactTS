@@ -1,8 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { Moon, Sun, LayoutDashboard, Zap, FolderKanban, LogOut } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
+import { Moon, Sun, LayoutDashboard, Zap, FolderKanban, LogOut, Trello } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -13,15 +13,19 @@ export function Navigation() {
   const { setTheme, theme } = useTheme()
   const { state, logout } = useAuth()
   const pathname = usePathname()
-
+ const router = useRouter()
   const navItems = [
-    { href: "/dashboard", label: "Dashboard", icon: FolderKanban },
-    { href: "/projects", label: "Projects", icon: FolderKanban }
-    
-  ]
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/projects", label: "Projects", icon: FolderKanban }
+]
+
+ if (pathname.startsWith("/board")) {
+    navItems.push({ href: pathname, label: "Board", icon: Trello }) // Keeps the exact board path
+  }
 
   const handleLogout = () => {
     logout()
+    router.replace("/login")
   }
 
   return (

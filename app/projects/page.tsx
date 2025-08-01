@@ -183,15 +183,17 @@ const { state: { user } } = useAuth() // ✅ get logged-in user
 
             {/* ✅ Button always visible */}
             <Button
-              onClick={() => {
-                setEditingProject(null)
-                setShowProjectDialog(true)
-              }}
-              className="shadow-lg"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              New Project
-            </Button>
+  onClick={() => {
+    setEditingProject(null)
+    setShowProjectDialog(true)
+  }}
+  className={`shadow-lg ${user?.role !== "ADMIN" ? "bg-transparent hover:bg-white/10 text-muted-foreground shadow-none border border-white/20" : ""}`}
+  disabled={user?.role !== "ADMIN"} // ✅ Disable for normal users
+>
+  <Plus className="mr-2 h-4 w-4" />
+  New Project
+</Button>
+
           </div>
 
           {loading ? (
