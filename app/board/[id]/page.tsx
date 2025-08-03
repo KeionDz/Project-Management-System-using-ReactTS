@@ -55,63 +55,82 @@ export default function KanbanBoardPage() {
   const [showAddStatusDialog, setShowAddStatusDialog] = useState(false)
   const [isReorderingColumns, setIsReorderingColumns] = useState(false)
   const [overIdForPlaceholder, setOverIdForPlaceholder] = useState<string | null>(null)
+useEffect(() => {
+  if (!projectId) return
 
-  useEffect(() => {
-    if (!projectId) return
+  const projectExists = state.projects.some((p: Project) => p.id === projectId)
 
-    const projectExists = state.projects.some((p: Project) => p.id === projectId)
-    if (!projectExists) {
-      router.replace("/projects")
-      return
-    }
-
-    setActiveProject(projectId)
-
-    const fetchProjectData = async () => {
-      try {
-        const res = await fetch(`/api/board/${projectId}`)
-        if (!res.ok) throw new Error("Failed to fetch project data")
-        const projectData = await res.json()
-
-        setStatusColumns((prev: StatusColumn[]) => [
-          ...prev.filter((c: StatusColumn) => c.projectId !== projectId),
-          ...projectData.statuses,
-        ])
-
-        setTasks((prev: Task[]) => [
-          ...prev.filter((t: Task) => t.projectId !== projectId),
-          ...projectData.tasks,
-        ])
-      } catch (err) {
-        console.error(err)
-      }
-    }
-
-    fetchProjectData()
-
-    // ✅ Setup Pusher real-time subscription
-    const channel = pusherClient.subscribe(`project-${projectId}`)
-
-    channel.bind("tasks-updated", (updatedTasks: Task[]) => {
-      setTasks((prev) => {
-        const other = prev.filter((t) => t.projectId !== projectId)
-        return [...other, ...updatedTasks]
-      })
+  if (!projectExists) {
+    toast({
+      title: "Project Deleted",
+      description: "The project you were viewing has been removed by an admin.",
+      variant: "destructive",
     })
+    router.replace("/projects")
+    setActiveProject(null)
+    return
+  }
 
-    channel.bind("columns-updated", (updatedCols: StatusColumn[]) => {
-  setStatusColumns(prev => {
-    const other = prev.filter(c => c.projectId !== projectId)
-    return [...other, ...updatedCols]
-  })
-})
+  setActiveProject(projectId)
 
+  const fetchProjectData = async () => {
+    try {
+      const res = await fetch(`/api/board/${projectId}`)
+      if (!res.ok) throw new Error("Failed to fetch project data")
+      const projectData = await res.json()
 
+      setStatusColumns((prev: StatusColumn[]) => {
+        const other = prev.filter((c) => c.projectId !== projectId)
+        return [...other, ...projectData.statuses]
+      })
 
-    return () => {
-      pusherClient.unsubscribe(`project-${projectId}`)
+      setTasks((prev: Task[]) => {
+        const other = prev.filter((t) => t.projectId !== projectId)
+        return [...other, ...projectData.tasks]
+      })
+    } catch (err) {
+      console.error("❌ Failed to fetch project data", err)
     }
-  }, [projectId, state.projects, setActiveProject, router, setStatusColumns, setTasks])
+  }
+
+  fetchProjectData()
+
+  // ✅ Setup Pusher subscriptions
+  const boardChannel = pusherClient.subscribe(`project-${projectId}`)
+  const projectsChannel = pusherClient.subscribe("projects")
+
+  // 🔹 Listen for project deletion
+  const handleProjectDeleted = ({
+    projectId: deletedId,
+    adminName,
+    projectName,
+  }: {
+    projectId: string
+    adminName: string
+    projectName: string
+  }) => {
+    if (deletedId === projectId) {
+      toast({
+        title: "Project Deleted",
+        description: `The project "${projectName}" was deleted by ${adminName}.`,
+        variant: "destructive",
+      })
+      setActiveProject(null)
+      router.replace("/projects")
+    }
+  }
+
+  projectsChannel.bind("project-deleted", handleProjectDeleted)
+
+  return () => {
+    pusherClient.unsubscribe(`project-${projectId}`)
+    projectsChannel.unbind("project-deleted", handleProjectDeleted)
+    pusherClient.unsubscribe("projects")
+  }
+}, [projectId, state.projects, router, setActiveProject, setStatusColumns, setTasks])
+
+
+
 
   const currentProjectTasks = state.tasks.filter((t) => t.projectId === state.activeProjectId)
   const currentProjectColumns = state.statusColumns.filter(

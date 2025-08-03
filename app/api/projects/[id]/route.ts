@@ -1,44 +1,43 @@
 import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
+import { pusherServer } from "@/lib/pusher"
 
 export async function DELETE(
-  req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  req: Request,
+  context: { params: { id: string } }
 ) {
-  const { id: projectId } = await context.params
+  const { id } = context.params
 
   try {
-    // ✅ Check if project exists
-    const existingProject = await prisma.project.findUnique({
-      where: { id: projectId },
+    // 1️⃣ Delete all tasks for this project
+    await prisma.task.deleteMany({ where: { projectId: id } })
+
+    // 2️⃣ Delete all status columns for this project
+    await prisma.statusColumn.deleteMany({ where: { projectId: id } })
+
+    // 3️⃣ Delete the project
+    await prisma.project.delete({ where: { id } })
+
+    // 4️⃣ Broadcast updated projects
+    const projects = await prisma.project.findMany({
+      orderBy: { createdAt: "desc" },
     })
 
-    if (!existingProject) {
-      // ✅ Return 200 so DELETE is idempotent
-      return NextResponse.json({ success: true, message: "Project already deleted." })
-    }
+    await pusherServer.trigger("projects", "projects-updated", projects)
 
-    console.log(`🗑️ Deleting project ${projectId} and all related data...`)
-
-    // ✅ Atomic delete (transaction)
-    await prisma.$transaction([
-      prisma.task.deleteMany({ where: { projectId } }),
-      prisma.statusColumn.deleteMany({ where: { projectId } }),
-      prisma.project.delete({ where: { id: projectId } }),
-    ])
-
-    return NextResponse.json({ success: true, message: "Project deleted successfully." })
-  } catch (error) {
-    console.error("❌ Error deleting project:", error)
-    return NextResponse.json({ error: "Failed to delete project." }, { status: 500 })
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error("❌ Failed to delete project", err)
+    return NextResponse.json({ error: "Failed to delete project" }, { status: 500 })
   }
 }
 
+
 export async function PUT(
-  req: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  req: Request,
+  context: { params: { id: string } } // ✅ no Promise
 ) {
-  const { id: projectId } = await context.params
+  const { id: projectId } = context.params
   const body = await req.json()
   const { name, description } = body
 
@@ -46,10 +45,13 @@ export async function PUT(
     const updated = await prisma.project.update({
       where: { id: projectId },
       data: {
-        ...(name !== undefined && { name }),
-        ...(description !== undefined && { description }),
+        ...(name && { name }),
+        ...(description && { description }),
       },
     })
+
+    const allProjects = await prisma.project.findMany({ orderBy: { createdAt: "desc" } })
+    await pusherServer.trigger("projects", "projects-updated", allProjects)
 
     return NextResponse.json(updated)
   } catch (error) {
@@ -57,3 +59,4 @@ export async function PUT(
     return NextResponse.json({ error: "Failed to update project." }, { status: 500 })
   }
 }
+

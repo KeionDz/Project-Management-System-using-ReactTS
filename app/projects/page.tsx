@@ -45,22 +45,24 @@ export default function ProjectsPage() {
     updateProject,
     deleteProject,
     setActiveProject,
-    dispatch,
   } = useDevTrack()
   const {
     state: { user },
-  } = useAuth() // ✅ get logged-in user
+  } = useAuth()
 
   const [loading, setLoading] = useState(true)
   const [showProjectDialog, setShowProjectDialog] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const router = useRouter()
 
-  // Initial fetch
- useEffect(() => {
-  setLoading(false) // Remove API fetch, provider handles it
-}, [])
+  // ✅ Provider already fetches projects on mount
+  useEffect(() => {
+    setLoading(false)
+  }, [])
 
+  // -----------------------
+  // Project Handlers
+  // -----------------------
   const handleEditProject = (project: Project) => {
     setEditingProject(project)
     setShowProjectDialog(true)
@@ -71,16 +73,32 @@ export default function ProjectsPage() {
     router.push(`/board/${projectId}`)
   }
 
-  // ✅ Live delete with optimistic UI
-  // Replace handleDeleteProject with:
-const handleDeleteProject = async (projectId: string) => {
-  await deleteProject(projectId) // ✅ provider handles UI + toast
-}
+  const handleDeleteProject = async (projectId: string) => {
+    if (state.projects.length <= 1) {
+      toast({
+        title: "Cannot Delete",
+        description: "You must keep at least one project.",
+        variant: "destructive",
+      })
+      return
+    }
 
+    const confirmed = confirm("Are you sure you want to delete this project?")
+    if (!confirmed) return
 
+    try {
+      await deleteProject(projectId) // ✅ provider handles optimistic + rollback
+    } catch (error) {
+      console.error("❌ Delete project failed", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete project.",
+        variant: "destructive",
+      })
+    }
+  }
 
   const handleCreateProject = async (projectData: Partial<Project>) => {
-    // ✅ Only admins can create
     if (!user || user.role !== "ADMIN") {
       toast({
         title: "Permission Denied",
@@ -90,54 +108,37 @@ const handleDeleteProject = async (projectId: string) => {
       return
     }
 
-    try {
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...projectData, userId: user.id }),
-      })
+    await addProject(
+      {
+        id: `temp-${Date.now()}`,
+        name: projectData.name?.trim() || "Untitled Project",
+        description: projectData.description?.trim() || "",
+        createdAt: new Date().toISOString(),
+      } as Project,
+      true // ✅ optimistic
+    )
 
-      if (!res.ok) {
-        const error = await res.json()
-        throw new Error(error?.error || "Failed to create project.")
-      }
+    setShowProjectDialog(false)
+  }
 
-      const savedProject: Project = await res.json()
-      addProject(savedProject)
+  const handleUpdateProject = async (projectData: Partial<Project>) => {
+    if (!projectData.id) return
+    await updateProject(projectData as Project)
+    setEditingProject(null)
+    setShowProjectDialog(false)
+  }
 
-      toast({
-        title: "Project Created",
-        description: `“${projectData.name}” has been added.`,
-      })
-
-      setShowProjectDialog(false)
-    } catch (err) {
-      console.error("❌ Create error:", err)
-      toast({
-        title: "Error creating project",
-        description: (err as Error).message || "Something went wrong.",
-        variant: "destructive",
-      })
+  const handleSaveProject = async (projectData: Partial<Project>) => {
+    if (projectData.id) {
+      await handleUpdateProject(projectData)
+    } else {
+      await handleCreateProject(projectData)
     }
   }
 
- const handleUpdateProject = async (projectData: Partial<Project>) => {
-  if (!projectData.id) return
-  await updateProject(projectData as Project) // ✅ delegate to provider
-  setEditingProject(null)
-  setShowProjectDialog(false)
-}
-
-
-  const handleSaveProject = async (projectData: Partial<Project>) => {
-  if (projectData.id) {
-    await handleUpdateProject(projectData)
-  } else {
-    await handleCreateProject(projectData)
-  }
-}
-
-
+  // -----------------------
+  // UI
+  // -----------------------
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-background">
@@ -151,7 +152,6 @@ const handleDeleteProject = async (projectId: string) => {
               </p>
             </div>
 
-            {/* ✅ Button always visible */}
             <Button
               onClick={() => {
                 setEditingProject(null)
@@ -162,7 +162,7 @@ const handleDeleteProject = async (projectId: string) => {
                   ? "bg-transparent hover:bg-white/10 text-muted-foreground shadow-none border border-white/20"
                   : ""
               }`}
-              disabled={user?.role !== "ADMIN"} // ✅ Disable for normal users
+              disabled={user?.role !== "ADMIN"}
             >
               <Plus className="mr-2 h-4 w-4" />
               New Project
@@ -178,7 +178,7 @@ const handleDeleteProject = async (projectId: string) => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {state.projects.map((project: Project) => ( // ✅ typed
+              {state.projects.map((project) => (
                 <Card
                   key={project.id}
                   className="hover:shadow-md transition-shadow"
@@ -219,8 +219,7 @@ const handleDeleteProject = async (projectId: string) => {
                   </CardHeader>
                   <CardContent className="flex justify-between items-center pt-0">
                     <span className="text-sm text-muted-foreground">
-                      Created:{" "}
-                      {new Date(project.createdAt).toLocaleDateString()}
+                      Created: {new Date(project.createdAt).toLocaleDateString()}
                     </span>
                     <Button
                       variant="outline"

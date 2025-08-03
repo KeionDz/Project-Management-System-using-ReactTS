@@ -86,23 +86,45 @@ const devTrackReducer = (state: DevTrackState, action: DevTrackAction): DevTrack
         tasks: action.payload.tasks,
         statusColumns: action.payload.statusColumns.sort((a, b) => a.order - b.order),
       }
-    case "SET_PROJECTS":
-      return { ...state, projects: action.payload }
+     case "SET_PROJECTS": {
+  const uniqueProjects = Array.from(
+    new Map(action.payload.map((p) => [p.id, p])).values()
+  )
+
+  let newActive = state.activeProjectId
+if (newActive && !uniqueProjects.some((p) => p.id === newActive)) {
+  // ✅ Do not auto-select another project
+  newActive = null
+}
+
+  localStorage.setItem("activeProjectId", newActive || "")
+
+  return { ...state, projects: uniqueProjects, activeProjectId: newActive }
+}
+
+
     case "ADD_PROJECT":
-      return { ...state, projects: [...state.projects, action.payload] }
+  return {
+    ...state,
+    projects: Array.from(
+      new Map([...state.projects, action.payload].map(p => [p.id, p])).values()
+    ),
+  }
+
     case "UPDATE_PROJECT":
       return {
         ...state,
         projects: state.projects.map((p) => (p.id === action.payload.id ? action.payload : p)),
       }
     case "DELETE_PROJECT":
-      return {
-        ...state,
-        projects: state.projects.filter((p) => p.id !== action.payload),
-        tasks: state.tasks.filter((t) => t.projectId !== action.payload),
-        statusColumns: state.statusColumns.filter((c) => c.projectId !== action.payload),
-        activeProjectId: state.activeProjectId === action.payload ? null : state.activeProjectId,
-      }
+  return {
+    ...state,
+    projects: state.projects.filter((p) => p.id !== action.payload),
+    tasks: state.tasks.filter((t) => t.projectId !== action.payload),
+    statusColumns: state.statusColumns.filter((c) => c.projectId !== action.payload),
+    activeProjectId: state.activeProjectId === action.payload ? null : state.activeProjectId,
+  }
+
     case "SET_ACTIVE_PROJECT":
       return { ...state, activeProjectId: action.payload }
     case "SET_TASKS":
@@ -269,38 +291,104 @@ export function DevTrackProvider({ children }: { children: React.ReactNode }) {
   // -----------------------
   // Pusher Real-Time Sync
   // -----------------------
- useEffect(() => {
-  if (!state.activeProjectId) return
+ // -----------------------
+// Pusher Real-Time Sync
+// -----------------------
+useEffect(() => {
+  const projectsChannel = pusherClient.subscribe("projects")
 
-  const channel = pusherClient.subscribe(`project-${state.activeProjectId}`)
+  projectsChannel.bind("projects-updated", (updatedProjects: Project[]) => {
+  dispatch({ type: "SET_PROJECTS", payload: updatedProjects })
 
-  channel.bind("tasks-updated", (updatedTasks: Task[]) => {
-    dispatch({ type: "SET_TASKS", payload: updatedTasks })
-  })
+  // If active project was deleted
+  const currentActive = state.activeProjectId
+  const stillExists = updatedProjects.some((p) => p.id === currentActive)
 
-  channel.bind("columns-updated", (updatedColumns: StatusColumn[]) => {
-    dispatch({ type: "SET_STATUS_COLUMNS", payload: updatedColumns })
-  })
+  if (!stillExists && currentActive) {
+    // Clear active project
+    dispatch({ type: "SET_ACTIVE_PROJECT", payload: null })
+
+    // Redirect user to /projects
+    router.push("/projects")
+  }
+})
+
+
+  // Per-project channels
+  let projectChannel: any = null
+  if (state.activeProjectId) {
+    projectChannel = pusherClient.subscribe(`project-${state.activeProjectId}`)
+
+    projectChannel.bind("tasks-updated", (updatedTasks: Task[]) => {
+      dispatch({ type: "SET_TASKS", payload: updatedTasks })
+    })
+
+    projectChannel.bind("columns-updated", (updatedColumns: StatusColumn[]) => {
+      dispatch({ type: "SET_STATUS_COLUMNS", payload: updatedColumns })
+    })
+  }
 
   return () => {
-    pusherClient.unsubscribe(`project-${state.activeProjectId}`)
+    if (projectChannel) {
+      pusherClient.unsubscribe(`project-${state.activeProjectId}`)
+    }
   }
 }, [state.activeProjectId])
+
+
 
 
 
   // -----------------------
   // Action Helpers
   // -----------------------
-  const addProject = (data: Omit<Project, "id" | "createdAt">) => {
-    const newProject: Project = {
-      ...data,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString().split("T")[0],
-    }
-    dispatch({ type: "ADD_PROJECT", payload: newProject })
-    toast({ title: "Project Created", description: `"${newProject.name}" has been added.` })
+ const addProject = async (data: Project, optimistic = false) => {
+  // 1️⃣ Add optimistically
+  if (optimistic) {
+    dispatch({ type: "ADD_PROJECT", payload: data })
   }
+
+  toast({
+    title: "Project Created",
+    description: optimistic
+      ? `"${data.name}" is being saved...`
+      : `"${data.name}" has been added.`,
+  })
+
+  if (optimistic) {
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: data.name,
+          description: data.description,
+          userId: localStorage.getItem("userId"),
+        }),
+      })
+
+      if (!res.ok) throw new Error("Failed to create project")
+      const savedProject: Project = await res.json()
+
+      // ✅ Replace temp project with the real one instead of adding a new one
+      dispatch({ type: "DELETE_PROJECT", payload: data.id }) // remove temp
+      dispatch({ type: "ADD_PROJECT", payload: savedProject }) // add real
+
+    } catch (err) {
+      console.error("❌ Add project failed:", err)
+      if (data.id.startsWith("temp-")) {
+        dispatch({ type: "DELETE_PROJECT", payload: data.id })
+      }
+      toast({
+        title: "Error Creating Project",
+        description: "Failed to save project to server.",
+        variant: "destructive",
+      })
+    }
+  }
+}
+
+
 
   const updateProject = async (project: Project) => {
     if (project.id.startsWith("temp-")) {
@@ -324,41 +412,40 @@ export function DevTrackProvider({ children }: { children: React.ReactNode }) {
       toast({ title: "Error", description: "Failed to update project.", variant: "destructive" })
     }
   }
+const deleteProject = async (id: string) => {
+  const prevProjects = state.projects
+  const prevActive = state.activeProjectId
 
-  const deleteProject = async (id: string) => {
-    const prevProjects = state.projects
-    const prevActive = state.activeProjectId
-
-    dispatch({ type: "DELETE_PROJECT", payload: id })
-
-    try {
-      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" })
-
-      if (!res.ok && res.status !== 404) throw new Error("Failed to delete project")
-
-      toast({ title: "Project Deleted", description: "Project removed successfully." })
-
-      const remaining = prevProjects.filter((p) => p.id !== id)
-      if (!remaining.length) {
-        dispatch({ type: "SET_ACTIVE_PROJECT", payload: null })
-        localStorage.removeItem("activeProjectId")
-      } else if (prevActive === id) {
-        const newActive = remaining[0].id
-        dispatch({ type: "SET_ACTIVE_PROJECT", payload: newActive })
-        localStorage.setItem("activeProjectId", newActive)
-      }
-
-      fetch("/api/projects")
-        .then((res) => res.json())
-        .then((projects) => dispatch({ type: "SET_PROJECTS", payload: projects }))
-        .catch((err) => console.error("Failed to refresh projects", err))
-    } catch (error) {
-      console.error("❌ Delete failed, restoring project", error)
-      dispatch({ type: "SET_PROJECTS", payload: prevProjects })
-      dispatch({ type: "SET_ACTIVE_PROJECT", payload: prevActive })
-      toast({ title: "Error Deleting Project", description: "Failed to delete project.", variant: "destructive" })
-    }
+  // 1️⃣ Optimistic removal
+  dispatch({ type: "DELETE_PROJECT", payload: id })
+  if (prevActive === id) {
+    dispatch({ type: "SET_ACTIVE_PROJECT", payload: null })
+    localStorage.removeItem("activeProjectId")
   }
+
+  try {
+    const res = await fetch(`/api/projects/${id}`, { method: "DELETE" })
+
+    if (!res.ok && res.status !== 404) throw new Error("Failed to delete project")
+
+    toast({ title: "Project Deleted", description: "Project removed successfully." })
+    // ✅ No refetch needed — Pusher will broadcast to all clients
+  } catch (error) {
+    console.error("❌ Delete failed, rolling back", error)
+
+    // 2️⃣ Rollback if failed
+    dispatch({ type: "SET_PROJECTS", payload: prevProjects })
+    dispatch({ type: "SET_ACTIVE_PROJECT", payload: prevActive })
+
+    toast({
+      title: "Error Deleting Project",
+      description: "Failed to delete project.",
+      variant: "destructive",
+    })
+  }
+}
+
+
 
   const setActiveProject = (id: string | null) => dispatch({ type: "SET_ACTIVE_PROJECT", payload: id })
 

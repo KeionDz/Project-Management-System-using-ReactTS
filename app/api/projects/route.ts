@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
+import { pusherServer } from "@/lib/pusher"
 
 export async function GET() {
   try {
@@ -22,10 +23,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Project name is required." }, { status: 400 })
     }
 
-    // ✅ Check if the user is admin
-    const user = await prisma.user.findUnique({ where: { id: userId } })
-    if (!user || user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Only admins can create projects." }, { status: 403 })
+    // ✅ Admin check optional
+    if (userId) {
+      const user = await prisma.user.findUnique({ where: { id: userId } })
+      if (!user || user.role !== "ADMIN") {
+        return NextResponse.json({ error: "Only admins can create projects." }, { status: 403 })
+      }
     }
 
     const project = await prisma.project.create({
@@ -40,6 +43,10 @@ export async function POST(req: NextRequest) {
         createdAt: true,
       },
     })
+
+    // 🔹 Broadcast updated projects
+    const allProjects = await prisma.project.findMany({ orderBy: { createdAt: "desc" } })
+    await pusherServer.trigger("projects", "projects-updated", allProjects)
 
     return NextResponse.json(project)
   } catch (error) {
