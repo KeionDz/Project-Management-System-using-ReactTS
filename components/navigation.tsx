@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Moon, Sun, LayoutDashboard, Zap, FolderKanban, LogOut, Trello } from "lucide-react"
+import { Moon, Sun, LayoutDashboard, Zap, FolderKanban, LogOut, Trello, Settings } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -100,6 +100,14 @@ export function Navigation() {
 
                   </div>
                 </div>
+                <DropdownMenuItem
+  className="flex items-center"
+  onClick={() => router.push("/settings")}
+>
+  <Settings className="mr-2 h-4 w-4" />
+  <span>Settings</span>
+</DropdownMenuItem>
+
                 <DropdownMenuItem onClick={handleLogout} className="text-red-600 dark:text-red-400">
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Sign out</span>
