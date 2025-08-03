@@ -199,7 +199,9 @@ export function DevTrackProvider({ children }: { children: React.ReactNode }) {
       ? pathname.split("/board/")[1]
       : null
 
-  // Fetch projects
+  // -----------------------
+  // Initial Projects Fetch
+  // -----------------------
   useEffect(() => {
     const fetchProjects = async () => {
       try {
@@ -233,7 +235,9 @@ export function DevTrackProvider({ children }: { children: React.ReactNode }) {
     fetchProjects()
   }, [urlProjectId])
 
+  // -----------------------
   // Fetch tasks & statuses
+  // -----------------------
   useEffect(() => {
     const fetchProjectData = async () => {
       if (!state.activeProjectId || !pathname.startsWith("/board")) return
@@ -245,10 +249,7 @@ export function DevTrackProvider({ children }: { children: React.ReactNode }) {
           fetch(`/api/status?projectId=${state.activeProjectId}`),
         ])
 
-        const [tasks, statuses] = await Promise.all([
-          tasksRes.json(),
-          statusesRes.json(),
-        ])
+        const [tasks, statuses] = await Promise.all([tasksRes.json(), statusesRes.json()])
 
         dispatch({ type: "SET_TASKS", payload: tasks })
         dispatch({ type: "SET_STATUS_COLUMNS", payload: statuses })
@@ -265,7 +266,10 @@ export function DevTrackProvider({ children }: { children: React.ReactNode }) {
     fetchProjectData()
   }, [state.activeProjectId, pathname])
 
-  useEffect(() => {
+  // -----------------------
+  // Pusher Real-Time Sync
+  // -----------------------
+ useEffect(() => {
   if (!state.activeProjectId) return
 
   const channel = pusherClient.subscribe(`project-${state.activeProjectId}`)
@@ -288,7 +292,7 @@ export function DevTrackProvider({ children }: { children: React.ReactNode }) {
   // -----------------------
   // Action Helpers
   // -----------------------
-const addProject = (data: Omit<Project, "id" | "createdAt">) => {
+  const addProject = (data: Omit<Project, "id" | "createdAt">) => {
     const newProject: Project = {
       ...data,
       id: Date.now().toString(),
@@ -297,85 +301,67 @@ const addProject = (data: Omit<Project, "id" | "createdAt">) => {
     dispatch({ type: "ADD_PROJECT", payload: newProject })
     toast({ title: "Project Created", description: `"${newProject.name}" has been added.` })
   }
-  
+
   const updateProject = async (project: Project) => {
-  // ✅ Only update if it's a real DB project
-  if (project.id.startsWith("temp-")) {
-    console.warn("Skipping update for temporary project", project.id)
-    return
-  }
+    if (project.id.startsWith("temp-")) {
+      console.warn("Skipping update for temporary project", project.id)
+      return
+    }
 
-  try {
-    const res = await fetch(`/api/projects/${project.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(project),
-    })
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(project),
+      })
 
-    if (!res.ok) throw new Error("Failed to update project")
-    const updated: Project = await res.json()
-    dispatch({ type: "UPDATE_PROJECT", payload: updated })
-    toast({ title: "Project Updated", description: `"${updated.name}" updated successfully.` })
-  } catch (err) {
-    console.error("❌ Update project failed", err)
-    toast({ title: "Error", description: "Failed to update project.", variant: "destructive" })
+      if (!res.ok) throw new Error("Failed to update project")
+      const updated: Project = await res.json()
+      dispatch({ type: "UPDATE_PROJECT", payload: updated })
+      toast({ title: "Project Updated", description: `"${updated.name}" updated successfully.` })
+    } catch (err) {
+      console.error("❌ Update project failed", err)
+      toast({ title: "Error", description: "Failed to update project.", variant: "destructive" })
+    }
   }
-}
 
   const deleteProject = async (id: string) => {
-  const prevProjects = state.projects
-  const prevActive = state.activeProjectId
+    const prevProjects = state.projects
+    const prevActive = state.activeProjectId
 
-  // 1️⃣ Optimistically remove project from UI
-  dispatch({ type: "DELETE_PROJECT", payload: id })
+    dispatch({ type: "DELETE_PROJECT", payload: id })
 
-  try {
-    const res = await fetch(`/api/projects/${id}`, { method: "DELETE" })
+    try {
+      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" })
 
-    if (!res.ok && res.status !== 404) {
-      throw new Error("Failed to delete project")
+      if (!res.ok && res.status !== 404) throw new Error("Failed to delete project")
+
+      toast({ title: "Project Deleted", description: "Project removed successfully." })
+
+      const remaining = prevProjects.filter((p) => p.id !== id)
+      if (!remaining.length) {
+        dispatch({ type: "SET_ACTIVE_PROJECT", payload: null })
+        localStorage.removeItem("activeProjectId")
+      } else if (prevActive === id) {
+        const newActive = remaining[0].id
+        dispatch({ type: "SET_ACTIVE_PROJECT", payload: newActive })
+        localStorage.setItem("activeProjectId", newActive)
+      }
+
+      fetch("/api/projects")
+        .then((res) => res.json())
+        .then((projects) => dispatch({ type: "SET_PROJECTS", payload: projects }))
+        .catch((err) => console.error("Failed to refresh projects", err))
+    } catch (error) {
+      console.error("❌ Delete failed, restoring project", error)
+      dispatch({ type: "SET_PROJECTS", payload: prevProjects })
+      dispatch({ type: "SET_ACTIVE_PROJECT", payload: prevActive })
+      toast({ title: "Error Deleting Project", description: "Failed to delete project.", variant: "destructive" })
     }
-
-    // ✅ Success toast
-    toast({ 
-      title: "Project Deleted", 
-      description: "Project removed successfully." 
-    })
-
-    // 2️⃣ If we deleted the active project, switch to another one
-    const remaining = prevProjects.filter((p) => p.id !== id)
-    if (!remaining.length) {
-      dispatch({ type: "SET_ACTIVE_PROJECT", payload: null })
-      localStorage.removeItem("activeProjectId")
-    } else if (prevActive === id) {
-      const newActive = remaining[0].id
-      dispatch({ type: "SET_ACTIVE_PROJECT", payload: newActive })
-      localStorage.setItem("activeProjectId", newActive)
-    }
-
-    // 3️⃣ Background refresh for consistency
-    fetch("/api/projects")
-      .then((res) => res.json())
-      .then((projects) => dispatch({ type: "SET_PROJECTS", payload: projects }))
-      .catch((err) => console.error("Failed to refresh projects", err))
-
-  } catch (error) {
-    console.error("❌ Delete failed, restoring project", error)
-
-    // ❌ Rollback
-    dispatch({ type: "SET_PROJECTS", payload: prevProjects })
-    dispatch({ type: "SET_ACTIVE_PROJECT", payload: prevActive })
-
-    // ❌ Error toast
-    toast({ 
-      title: "Error Deleting Project", 
-      description: "Failed to delete project.", 
-      variant: "destructive" 
-    })
   }
-}
 
   const setActiveProject = (id: string | null) => dispatch({ type: "SET_ACTIVE_PROJECT", payload: id })
+
   const addTask = async (data: Omit<Task, "id" | "projectId">) => {
     if (!state.activeProjectId) return
 
@@ -385,9 +371,7 @@ const addProject = (data: Omit<Project, "id" | "createdAt">) => {
       id: tempId,
       projectId: state.activeProjectId,
       createdAt: new Date().toISOString(),
-      order: state.tasks.filter(
-        (t) => t.projectId === state.activeProjectId && t.statusId === data.statusId
-      ).length,
+      order: state.tasks.filter((t) => t.projectId === state.activeProjectId && t.statusId === data.statusId).length,
     }
 
     dispatch({ type: "ADD_TASK", payload: newTask })
@@ -410,7 +394,6 @@ const addProject = (data: Omit<Project, "id" | "createdAt">) => {
     }
   }
 
-
   const updateTask = async (task: Task) => {
     try {
       const res = await fetch("/api/tasks", {
@@ -427,7 +410,8 @@ const addProject = (data: Omit<Project, "id" | "createdAt">) => {
       toast({ title: "Error", description: "Failed to update task.", variant: "destructive" })
     }
   }
-   const deleteTask = async (id: string) => {
+
+  const deleteTask = async (id: string) => {
     try {
       const res = await fetch(`/api/tasks?id=${id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Failed to delete task")
@@ -438,66 +422,152 @@ const addProject = (data: Omit<Project, "id" | "createdAt">) => {
       toast({ title: "Error", description: "Failed to delete task.", variant: "destructive" })
     }
   }
+
   const moveTask = (id: string, status: string, overId?: string) =>
     dispatch({ type: "MOVE_TASK", payload: { id, status, overId } })
 
-  // ✅ Fixed to fetch from server and update UI
   const addStatusColumn = async (data: Omit<StatusColumn, "id" | "projectId">) => {
-    if (!state.activeProjectId) return
-    try {
-      const res = await fetch("/api/status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, projectId: state.activeProjectId }),
-      })
-      if (!res.ok) throw new Error("Failed to add status column")
-      const newStatus: StatusColumn = await res.json()
-      dispatch({ type: "ADD_STATUS_COLUMN", payload: newStatus })
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const updateStatusColumn = (column: StatusColumn) =>
-    dispatch({ type: "UPDATE_STATUS_COLUMN", payload: column })
-
- const deleteStatusColumn = async (id: string) => {
   if (!state.activeProjectId) return
 
+  // 1️⃣ Optimistic UI
+  const tempId = `temp-${Date.now()}`
+  const newColumn: StatusColumn = {
+    ...data,
+    id: tempId,
+    projectId: state.activeProjectId,
+    order: state.statusColumns.filter((c) => c.projectId === state.activeProjectId).length,
+  }
+  dispatch({ type: "ADD_STATUS_COLUMN", payload: newColumn })
+
   try {
-    // 1️⃣ Call API to delete first (no optimistic removal)
-    const res = await fetch(`/api/status?id=${id}`, { method: "DELETE" })
+    // 2️⃣ Post to API
+    const res = await fetch("/api/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...data, projectId: state.activeProjectId }),
+    })
 
-    if (!res.ok && res.status !== 404) {
-      throw new Error("Failed to delete column")
-    }
+    if (!res.ok) throw new Error("Failed to add status column")
 
-    // 2️⃣ Always refetch fresh statuses and REPLACE local state
-    const refreshed = await fetch(`/api/status?projectId=${state.activeProjectId}`).then((res) => res.json())
+    // ✅ API now returns full status list
+    const updatedColumns: StatusColumn[] = await res.json()
 
-    dispatch({ type: "SET_STATUS_COLUMNS", payload: refreshed })
-  } catch (error) {
-    console.error("Delete failed", error)
+    // 3️⃣ Replace temp with full list
+    dispatch({ type: "SET_STATUS_COLUMNS", payload: updatedColumns })
+
+    // 4️⃣ Toast confirmation
+    toast({
+      title: "Status Column Added",
+      description: `"${data.name}" has been created successfully.`,
+    })
+
+    // ✅ Pusher already broadcasts to others
+  } catch (err) {
+    console.error(err)
+
+    // ❌ Revert if failed
+    dispatch({ type: "DELETE_STATUS_COLUMN", payload: tempId })
+
+    // ❌ Show error toast
+    toast({
+      title: "Error",
+      description: "Failed to create status column.",
+      variant: "destructive",
+    })
   }
 }
-const reorderTasks = async (updatedTasks: Task[]) => {
-  dispatch({ type: "SET_TASKS", payload: updatedTasks })
-  await fetch("/api/tasks/reorder", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(updatedTasks.map((t) => ({ id: t.id, statusId: t.statusId, order: t.order }))),
-  })
+
+
+
+  const updateStatusColumn = async (column: StatusColumn) => {
+  if (!state.activeProjectId) return
+
+  const prevColumns = [...state.statusColumns]
+  // 1️⃣ Optimistic update
+  dispatch({ type: "UPDATE_STATUS_COLUMN", payload: column })
+
+  try {
+    const res = await fetch("/api/status", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(column),
+    })
+
+    if (!res.ok) throw new Error("Failed to update status column")
+
+    // ✅ Fetch latest list for full sync
+    const refreshed = await fetch(`/api/status?projectId=${state.activeProjectId}`).then((res) =>
+      res.json()
+    )
+    dispatch({ type: "SET_STATUS_COLUMNS", payload: refreshed })
+
+    // ✅ Success toast
+    toast({
+      title: "Status Updated",
+      description: `"${column.name}" has been updated successfully.`,
+    })
+  } catch (error) {
+    console.error("❌ Update failed", error)
+    dispatch({ type: "SET_STATUS_COLUMNS", payload: prevColumns }) // rollback
+    toast({
+      title: "Error",
+      description: "Failed to update status column.",
+      variant: "destructive",
+    })
+  }
 }
 
-const reorderStatusColumns = async (columns: StatusColumn[]) => {
-  dispatch({ type: "REORDER_STATUS_COLUMNS", payload: columns })
-  await fetch("/api/status/reorder", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(columns.map((c, i) => ({ id: c.id, order: i }))),
-  })
+
+  const deleteStatusColumn = async (id: string) => {
+  if (!state.activeProjectId) return
+
+  const prevColumns = [...state.statusColumns]
+  dispatch({ type: "DELETE_STATUS_COLUMN", payload: id }) // 1️⃣ Optimistic UI
+
+  try {
+    const res = await fetch(`/api/status?id=${id}`, { method: "DELETE" })
+    if (!res.ok && res.status !== 404) throw new Error("Failed to delete column")
+
+    // ✅ Fetch refreshed list to ensure sync
+    const refreshed = await fetch(`/api/status?projectId=${state.activeProjectId}`).then((res) =>
+      res.json()
+    )
+    dispatch({ type: "SET_STATUS_COLUMNS", payload: refreshed })
+
+    // ✅ Success toast
+    toast({
+      title: "Status Deleted",
+      description: "The status column has been removed.",
+    })
+  } catch (error) {
+    console.error("❌ Delete failed", error)
+    dispatch({ type: "SET_STATUS_COLUMNS", payload: prevColumns }) // rollback
+    toast({
+      title: "Error",
+      description: "Failed to delete status column.",
+      variant: "destructive",
+    })
+  }
 }
 
+
+  const reorderTasks = async (updatedTasks: Task[]) => {
+    dispatch({ type: "SET_TASKS", payload: updatedTasks })
+    await fetch("/api/tasks/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatedTasks.map((t) => ({ id: t.id, statusId: t.statusId, order: t.order }))),
+    })
+  }
+
+  const reorderStatusColumns = async (columns: StatusColumn[]) => {
+    dispatch({ type: "REORDER_STATUS_COLUMNS", payload: columns })
+    await fetch("/api/status/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(columns.map((c, i) => ({ id: c.id, order: i }))),
+    })
+  }
 
   return (
     <DevTrackContext.Provider

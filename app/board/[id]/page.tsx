@@ -56,7 +56,6 @@ export default function KanbanBoardPage() {
   const [isReorderingColumns, setIsReorderingColumns] = useState(false)
   const [overIdForPlaceholder, setOverIdForPlaceholder] = useState<string | null>(null)
 
-  // ------------------ FETCH & PUSHER ------------------
   useEffect(() => {
     if (!projectId) return
 
@@ -74,21 +73,15 @@ export default function KanbanBoardPage() {
         if (!res.ok) throw new Error("Failed to fetch project data")
         const projectData = await res.json()
 
-        setStatusColumns((prev: StatusColumn[]) => {
-          const merged = [
-            ...prev.filter((c) => c.projectId !== projectId),
-            ...projectData.statuses,
-          ]
-          return Array.from(new Map(merged.map((c) => [c.id, c])).values())
-        })
+        setStatusColumns((prev: StatusColumn[]) => [
+          ...prev.filter((c: StatusColumn) => c.projectId !== projectId),
+          ...projectData.statuses,
+        ])
 
-        setTasks((prev: Task[]) => {
-          const merged = [
-            ...prev.filter((t) => t.projectId !== projectId),
-            ...projectData.tasks,
-          ]
-          return Array.from(new Map(merged.map((t) => [t.id, t])).values())
-        })
+        setTasks((prev: Task[]) => [
+          ...prev.filter((t: Task) => t.projectId !== projectId),
+          ...projectData.tasks,
+        ])
       } catch (err) {
         console.error(err)
       }
@@ -101,30 +94,25 @@ export default function KanbanBoardPage() {
 
     channel.bind("tasks-updated", (updatedTasks: Task[]) => {
       setTasks((prev) => {
-        const merged = [
-          ...prev.filter((t) => t.projectId !== projectId),
-          ...updatedTasks,
-        ]
-        return Array.from(new Map(merged.map((t) => [t.id, t])).values())
+        const other = prev.filter((t) => t.projectId !== projectId)
+        return [...other, ...updatedTasks]
       })
     })
 
     channel.bind("columns-updated", (updatedCols: StatusColumn[]) => {
-      setStatusColumns((prev) => {
-        const merged = [
-          ...prev.filter((c) => c.projectId !== projectId),
-          ...updatedCols,
-        ]
-        return Array.from(new Map(merged.map((c) => [c.id, c])).values())
-      })
-    })
+  setStatusColumns(prev => {
+    const other = prev.filter(c => c.projectId !== projectId)
+    return [...other, ...updatedCols]
+  })
+})
+
+
 
     return () => {
       pusherClient.unsubscribe(`project-${projectId}`)
     }
   }, [projectId, state.projects, setActiveProject, router, setStatusColumns, setTasks])
 
-  // ------------------ DERIVED STATE ------------------
   const currentProjectTasks = state.tasks.filter((t) => t.projectId === state.activeProjectId)
   const currentProjectColumns = state.statusColumns.filter(
     (c) => c.projectId === state.activeProjectId
@@ -134,7 +122,6 @@ export default function KanbanBoardPage() {
   const { scrollRef, onMouseDown, isDragging: isScrolling } =
     useDraggableScroll<HTMLDivElement>(isDndDragging)
 
-  // ------------------ DRAG HANDLERS ------------------
   const handleDragStart = (event: DragStartEvent) => {
     const activeId = event.active.id as string
     const task = currentProjectTasks.find((t) => t.id === activeId)
@@ -178,11 +165,7 @@ export default function KanbanBoardPage() {
         reorderStatusColumns(reordered)
 
         // ✅ Persist to DB and trigger Pusher
-        await fetch("/api/status-columns/reorder", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reordered.map((col) => ({ id: col.id, order: col.order, projectId }))),
-        })
+       
       }
     }
 
@@ -226,7 +209,6 @@ export default function KanbanBoardPage() {
     setActiveColumn(null)
   }
 
-  // ------------------ UI HELPERS ------------------
   const handleEditTask = (task: Task) => {
     setTaskToEdit(task)
     setShowEditDialog(true)
@@ -243,7 +225,6 @@ export default function KanbanBoardPage() {
   const isLoading = !state.activeProjectId || !state.projects.length || state.loading
   const activeProject = state.projects.find((p) => p.id === state.activeProjectId)
 
-  // ------------------ RENDER ------------------
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-background">

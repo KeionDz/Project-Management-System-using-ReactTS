@@ -57,15 +57,9 @@ export default function ProjectsPage() {
   const router = useRouter()
 
   // Initial fetch
-  useEffect(() => {
-    const fetchProjects = async () => {
-      const res = await fetch("/api/projects")
-      const data: Project[] = await res.json()
-      dispatch({ type: "SET_PROJECTS", payload: data })
-      setLoading(false)
-    }
-    fetchProjects()
-  }, [dispatch])
+ useEffect(() => {
+  setLoading(false) // Remove API fetch, provider handles it
+}, [])
 
   const handleEditProject = (project: Project) => {
     setEditingProject(project)

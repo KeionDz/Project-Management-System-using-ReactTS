@@ -16,9 +16,25 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Invalid body" }, { status: 400 })
     }
 
-    // ✅ Update all columns atomically
+    // 1️⃣ Get existing orders to avoid unnecessary updates
+    const existing = await prisma.statusColumn.findMany({
+      where: { id: { in: body.map((c) => c.id) } },
+      select: { id: true, order: true, projectId: true },
+    })
+
+    // 2️⃣ Filter only columns that actually changed
+    const updatesNeeded = body.filter((col) => {
+      const current = existing.find((e) => e.id === col.id)
+      return current && current.order !== col.order
+    })
+
+    if (updatesNeeded.length === 0) {
+      return NextResponse.json({ success: true, updatedColumns: existing }) // ✅ nothing changed
+    }
+
+    // 3️⃣ Perform atomic update only for changed columns
     const updatedColumns = await prisma.$transaction(
-      body.map((col) =>
+      updatesNeeded.map((col) =>
         prisma.statusColumn.update({
           where: { id: col.id },
           data: { order: col.order },
@@ -26,13 +42,13 @@ export async function PUT(req: Request) {
       )
     )
 
-    // ✅ Broadcast via Pusher if projectId exists
+    // 4️⃣ Broadcast once via Pusher
     const projectId = updatedColumns[0]?.projectId
     if (projectId && pusherServer) {
       await pusherServer.trigger(
         `project-${projectId}`,
         "columns-updated",
-        updatedColumns
+        await prisma.statusColumn.findMany({ where: { projectId } }) // ✅ send full fresh list
       )
     }
 

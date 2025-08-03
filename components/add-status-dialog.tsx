@@ -42,39 +42,20 @@ export function AddStatusDialog({ open, onOpenChange }: AddStatusDialogProps) {
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  e.preventDefault()
+  if (!state.activeProjectId) return
 
-    if (!state.activeProjectId) {
-      toast({ title: "Error", description: "No active project selected.", variant: "destructive" })
-      return
-    }
-
-    setLoading(true)
-    try {
-      // ✅ Use context helper to handle optimistic UI + server sync
-      await addStatusColumn({
-        name: formData.name,
-        color: formData.color,
-        order: state.statusColumns.filter(
-          (col: { projectId: any }) => col.projectId === state.activeProjectId
-        ).length,
-      })
-
-      toast({
-        title: "Column Added",
-        description: `Status "${formData.name}" created.`,
-      })
-
-      // Reset & close
-      onOpenChange(false)
-      setFormData({ name: "", color: colorOptions[0].value })
-    } catch (error) {
-      console.error(error)
-      toast({ title: "Error", description: "Failed to add status column.", variant: "destructive" })
-    } finally {
-      setLoading(false)
-    }
-  }
+  setLoading(true)
+  await addStatusColumn({
+    name: formData.name,
+    color: formData.color,
+    order: 0, // order is computed in the helper
+  })
+  toast({ title: "Column Added", description: `Status "${formData.name}" created.` })
+  onOpenChange(false)
+  setFormData({ name: "", color: colorOptions[0].value })
+  setLoading(false)
+}
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
