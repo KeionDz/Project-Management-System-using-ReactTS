@@ -566,23 +566,23 @@ const deleteProject = async (id: string) => {
 
 
 
-  const updateStatusColumn = async (column: StatusColumn) => {
+  const updateStatusColumn = async (data: StatusColumn) => {
   if (!state.activeProjectId) return
 
   const prevColumns = [...state.statusColumns]
+
   // 1️⃣ Optimistic update
-  dispatch({ type: "UPDATE_STATUS_COLUMN", payload: column })
+  dispatch({ type: "UPDATE_STATUS_COLUMN", payload: data })
 
   try {
     const res = await fetch("/api/status", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(column),
+      body: JSON.stringify(data),
     })
 
     if (!res.ok) throw new Error("Failed to update status column")
 
-    // ✅ Fetch latest list for full sync
     const refreshed = await fetch(`/api/status?projectId=${state.activeProjectId}`).then((res) =>
       res.json()
     )
@@ -591,7 +591,7 @@ const deleteProject = async (id: string) => {
     // ✅ Success toast
     toast({
       title: "Status Updated",
-      description: `"${column.name}" has been updated successfully.`,
+      description: `"${data.name}" has been updated successfully.`,
     })
   } catch (error) {
     console.error("❌ Update failed", error)
@@ -603,6 +603,7 @@ const deleteProject = async (id: string) => {
     })
   }
 }
+
 
 
   const deleteStatusColumn = async (id: string) => {

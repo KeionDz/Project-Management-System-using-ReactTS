@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import type { Task } from "@/components/devtrack-provider"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -11,6 +12,12 @@ import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+
+interface User {
+  id: string
+  name: string
+  email: string
+}
 
 const getPriorityColor = (priority: Task["priority"]) => {
   switch (priority) {
@@ -40,6 +47,36 @@ interface TaskCardProps {
 
 export function TaskCard({ task, onEdit, attributes, listeners, className }: TaskCardProps) {
   const { deleteTask } = useDevTrack()
+  const [users, setUsers] = useState<User[]>([])
+
+  // Fetch users for dropdown
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const res = await fetch("/api/users")
+        if (!res.ok) throw new Error("Failed to fetch users")
+        const data: User[] = await res.json()
+        setUsers(data)
+      } catch (err) {
+        console.error("❌ Failed to fetch users", err)
+      }
+    }
+    fetchUsers()
+  }, [])
+
+  // Update assignee
+  const handleAssign = async (user: User) => {
+    try {
+      await fetch(`/api/tasks/${task.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignee: user.name }),
+      })
+      onEdit({ ...task, assignee: user.name }) // Update local UI
+    } catch (err) {
+      console.error("❌ Failed to update assignee", err)
+    }
+  }
 
   return (
     <Card
@@ -59,7 +96,7 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
           </div>
 
           <div className="flex items-center space-x-1 shrink-0">
-            {/* ✅ Drag Handle Only */}
+            {/* Drag Handle */}
             <Button
               variant="ghost"
               size="icon"
@@ -71,7 +108,7 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
               <GripVertical className="h-3 w-3" />
             </Button>
 
-            {/* ✅ Dropdown Menu (No listeners to avoid infinite loop) */}
+            {/* Task Options */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -152,16 +189,35 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
           </div>
         )}
 
-        {/* Assignee */}
-        <div className="flex items-center space-x-2">
-          <Avatar className="h-6 w-6">
-            <AvatarImage
-              src={`/placeholder.svg?height=24&width=24&text=${getInitials(task.assignee)}`}
-            />
-            <AvatarFallback className="text-xs">{getInitials(task.assignee)}</AvatarFallback>
-          </Avatar>
-          <span className="text-xs text-muted-foreground truncate">{task.assignee}</span>
-        </div>
+        {/* Assignee Dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <div className="flex items-center space-x-2 cursor-pointer hover:opacity-80">
+              <Avatar className="h-6 w-6">
+                <AvatarImage
+                  src={`/placeholder.svg?height=24&width=24&text=${getInitials(task.assignee)}`}
+                />
+                <AvatarFallback className="text-xs">{getInitials(task.assignee)}</AvatarFallback>
+              </Avatar>
+              <span className="text-xs text-muted-foreground truncate">
+                {task.assignee || "Unassigned"}
+              </span>
+            </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            {users.map((user) => (
+              <DropdownMenuItem
+                key={user.id}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleAssign(user)
+                }}
+              >
+                {user.name} ({user.email})
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </CardContent>
     </Card>
   )

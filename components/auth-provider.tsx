@@ -7,8 +7,8 @@ export interface User {
   id: string
   email: string
   name: string
-  role: string      // ✅ Add role
-  avatar?: string
+  role: string
+  avatarUrl: string
 }
 
 interface AuthState {
@@ -46,12 +46,15 @@ const AuthContext = createContext<{
   login: (email: string, password: string) => Promise<boolean>
   register: (email: string, password: string, name: string) => Promise<boolean>
   logout: () => void
+  setUser: (user: User) => void
+  refreshUser?: () => void
 } | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState)
   const { toast } = useToast()
 
+  // ✅ Load user from localStorage on mount
   useEffect(() => {
     const storedUser = localStorage.getItem("devtrack_user")
     if (storedUser) {
@@ -67,6 +70,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // ✅ Utility to ensure avatar is always a valid URL
+  const withAvatar = (user: User) => {
+    return {
+      ...user,
+      avatar:
+        user.avatarUrl ||
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=0D8ABC&color=fff&size=64`,
+    }
+  }
+
+  // ✅ Login function
   const login = async (email: string, password: string): Promise<boolean> => {
     dispatch({ type: "SET_LOADING", payload: true })
 
@@ -80,13 +94,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Login failed")
 
-      const user: User = {
+      const user = withAvatar({
         id: data.user.id,
         email: data.user.email,
         name: data.user.name,
-        role: data.user.role,   // ✅ Include role
-        avatar: `/placeholder.svg?height=32&width=32&text=${data.user.name.charAt(0).toUpperCase()}`,
-      }
+        role: data.user.role,
+        avatarUrl: data.user.avatarUrl,
+      })
 
       localStorage.setItem("devtrack_user", JSON.stringify(user))
       dispatch({ type: "SET_USER", payload: user })
@@ -109,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // ✅ Register function
   const register = async (email: string, password: string, name: string): Promise<boolean> => {
     dispatch({ type: "SET_LOADING", payload: true })
 
@@ -132,13 +147,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Registration failed")
 
-      const user: User = {
+      const user = withAvatar({
         id: data.user.id,
         email: data.user.email,
         name: data.user.name,
-        role: data.user.role || "USER", // ✅ Default to USER if not provided
-        avatar: `/placeholder.svg?height=32&width=32&text=${data.user.name.charAt(0).toUpperCase()}`,
-      }
+        role: data.user.role || "USER",
+        avatarUrl: data.user.avatarUrl,
+      })
 
       localStorage.setItem("devtrack_user", JSON.stringify(user))
       dispatch({ type: "SET_USER", payload: user })
@@ -161,27 +176,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // ✅ Logout function
   const logout = () => {
-  // ✅ Clear all relevant localStorage keys for DevTrack
-  localStorage.removeItem("devtrack_user")
-  localStorage.removeItem("active_project") // optional: clear active project
-  
-  // ✅ Reset state
-  dispatch({ type: "LOGOUT" })
+    localStorage.removeItem("devtrack_user")
+    localStorage.removeItem("active_project")
+    sessionStorage.clear()
 
-  // ✅ Clear session storage if used
-  sessionStorage.clear()
+    dispatch({ type: "LOGOUT" })
 
-  // ✅ Notify user
-  toast({
-    title: "Logged Out",
-    description: "You have been successfully logged out.",
-  })
-}
+    toast({
+      title: "Logged Out",
+      description: "You have been successfully logged out.",
+    })
+  }
 
+  // ✅ Update current user info (for profile updates)
+  const setUser = (user: User) => {
+    const finalUser = withAvatar(user)
+    localStorage.setItem("devtrack_user", JSON.stringify(finalUser))
+    dispatch({ type: "SET_USER", payload: finalUser })
+  }
+
+  // ✅ Optional: Refresh user from localStorage
+  const refreshUser = () => {
+    const storedUser = localStorage.getItem("devtrack_user")
+    if (storedUser) {
+      const user = JSON.parse(storedUser) as User
+      dispatch({ type: "SET_USER", payload: withAvatar(user) })
+    }
+  }
 
   return (
-    <AuthContext.Provider value={{ state, login, register, logout }}>
+    <AuthContext.Provider value={{ state, login, register, logout, setUser, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )

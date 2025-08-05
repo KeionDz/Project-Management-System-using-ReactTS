@@ -14,7 +14,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useDevTrack } from "@/components/devtrack-provider"
-import { toast } from "@/components/ui/use-toast"
 
 interface AddStatusDialogProps {
   open: boolean
@@ -34,7 +33,7 @@ const colorOptions = [
 ]
 
 export function AddStatusDialog({ open, onOpenChange }: AddStatusDialogProps) {
-  const { addStatusColumn, state } = useDevTrack()
+  const { state, addStatusColumn } = useDevTrack()  // ✅ Use from context
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
@@ -42,20 +41,27 @@ export function AddStatusDialog({ open, onOpenChange }: AddStatusDialogProps) {
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault()
-  if (!state.activeProjectId) return
+    e.preventDefault()
+    if (!state.activeProjectId) return
 
-  setLoading(true)
-  await addStatusColumn({
-    name: formData.name,
-    color: formData.color,
-    order: 0, // order is computed in the helper
-  })
-  toast({ title: "Column Added", description: `Status "${formData.name}" created.` })
-  onOpenChange(false)
-  setFormData({ name: "", color: colorOptions[0].value })
-  setLoading(false)
-}
+    setLoading(true)
+    try {
+      await addStatusColumn({
+        name: formData.name,
+        color: formData.color,
+        order: state.statusColumns.filter(c => c.projectId === state.activeProjectId).length,
+      })
+
+      // ✅ Reset and close dialog
+      setFormData({ name: "", color: colorOptions[0].value })
+      onOpenChange(false)
+    } catch (err) {
+      console.error(err)
+      // ❌ Toast is already handled inside addStatusColumn
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -66,6 +72,7 @@ export function AddStatusDialog({ open, onOpenChange }: AddStatusDialogProps) {
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Column Name */}
           <div className="space-y-2">
             <Label htmlFor="name">Column Name</Label>
             <Input
@@ -77,8 +84,9 @@ export function AddStatusDialog({ open, onOpenChange }: AddStatusDialogProps) {
             />
           </div>
 
+          {/* Color Selection */}
           <div className="space-y-2">
-            <Label>Column Color (UI only)</Label>
+            <Label>Column Color</Label>
             <div className="grid grid-cols-3 gap-2">
               {colorOptions.map((option) => (
                 <button

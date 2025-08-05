@@ -54,34 +54,42 @@ export function StatusColumnSettings({ column }: StatusColumnSettingsProps) {
   }
 
   const handleSave = async () => {
-    setLoading(true)
-    try {
-      // Update DB first
-      const res = await fetch("/api/status", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: column.id, name: formData.name }),
-      })
+  setLoading(true)
+  try {
+    // Send full data including color
+    const res = await fetch("/api/status", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: column.id, name: formData.name, color: formData.color }),
+    })
 
-      if (!res.ok) throw new Error("Failed to update column")
-      const updated = await res.json()
+    if (!res.ok) throw new Error("Failed to update column")
 
-      // Update local state
-      updateStatusColumn({
-        ...column,
-        name: updated.name,
-        color: formData.color,
-      })
+    // API returns the full updated list, so let's sync
+    const updatedColumns = await res.json()
+    const updatedColumn = updatedColumns.find((c: StatusColumn) => c.id === column.id)
 
-      toast({ title: "Column Updated", description: `"${formData.name}" has been updated.` })
-      setShowEditDialog(false)
-    } catch (err) {
-      console.error(err)
-      toast({ title: "Error", description: "Failed to update column.", variant: "destructive" })
-    } finally {
-      setLoading(false)
-    }
+    // Update local state
+    updateStatusColumn({
+      ...column,
+      name: formData.name,
+      color: formData.color,
+    })
+
+    toast({
+      title: "Column Updated",
+      description: `"${formData.name}" has been updated successfully.`,
+    })
+
+    setShowEditDialog(false)
+  } catch (err) {
+    console.error(err)
+    toast({ title: "Error", description: "Failed to update column.", variant: "destructive" })
+  } finally {
+    setLoading(false)
   }
+}
+
 const handleDelete = async () => {
   const canDelete =
     state.statusColumns.filter(

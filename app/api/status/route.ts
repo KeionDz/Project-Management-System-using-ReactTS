@@ -41,11 +41,12 @@ export async function POST(req: Request) {
 
     const nextOrder = maxOrderStatus ? maxOrderStatus.order + 1 : 0
 
-    await prisma.statusColumn.create({
+    const newStatus = await prisma.statusColumn.create({
       data: {
         name,
         projectId,
         order: nextOrder,
+        color: color || "bg-slate-100 dark:bg-slate-800", // ✅ Save color
       },
     })
 
