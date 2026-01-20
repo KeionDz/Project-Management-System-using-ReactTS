@@ -47,6 +47,7 @@ const AuthContext = createContext<{
   register: (email: string, password: string, name: string) => Promise<boolean>
   logout: () => void
   setUser: (user: User) => void
+  
   refreshUser?: () => void
 } | null>(null)
 
