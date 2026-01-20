@@ -10,19 +10,19 @@ import { Navigation } from "@/components/navigation"
 import { useTheme } from "next-themes"
 import Image from "next/image"
 import { useAuth } from "@/components/auth-provider"
+import { useToast } from "@/hooks/use-toast"   // ✅ ADD THIS
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
-  const { state } = useAuth() // ✅ logged-in user
+  const { state, setUser } = useAuth()
+  const { toast } = useToast()  // ✅ ADD THIS
   const userEmail = state.user?.email || ""
 
-  // Local state for profile form
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
-  const [avatar, setAvatar] = useState("/placeholder.svg?height=64&width=64")
+  const [avatar, setAvatar] = useState("/placeholder-user.jpg?height=64&width=64")
   const [loading, setLoading] = useState(true)
 
-  // ✅ Fetch current user profile from API
   useEffect(() => {
     if (!userEmail) {
       setLoading(false)
@@ -33,7 +33,7 @@ export default function SettingsPage() {
       try {
         const res = await fetch("/api/profile", {
           headers: {
-            "x-user-email": userEmail, // ✅ server uses this to identify user
+            "x-user-email": userEmail,
           },
         })
         if (!res.ok) throw new Error("Failed to load profile")
@@ -41,36 +41,59 @@ export default function SettingsPage() {
 
         setName(data.name || "")
         setEmail(data.email || "")
-        setAvatar(data.avatarUrl || "/placeholder.svg?height=64&width=64")
+        setAvatar(data.avatarUrl || "/placeholder-user.jpg?height=64&width=64")
       } catch (error) {
         console.error("Error fetching profile:", error)
-        alert("Failed to load profile. Please refresh.")
+        toast({
+          title: "Failed to load profile",
+          description: "Please refresh and try again.",
+          variant: "destructive",
+        })
       } finally {
         setLoading(false)
       }
     }
 
     fetchProfile()
-  }, [userEmail])
+  }, [userEmail, toast])
 
-  // ✅ Save changes to DB
   const handleProfileSave = async () => {
     try {
+      setLoading(true)  // ✅ loading while saving
+
       const res = await fetch("/api/profile", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          email, // Email used as identifier
+          email,
           avatarUrl: avatar,
         }),
       })
 
       if (!res.ok) throw new Error("Failed to update profile")
-      alert("Profile saved successfully!")
+
+      const data = await res.json()
+
+      setUser({
+        ...state.user!,
+        name: data.name,
+        avatarUrl: data.avatarUrl,
+      })
+
+      toast({
+        title: "Profile saved!",
+        description: "Your profile was updated successfully.",
+      })
     } catch (err) {
       console.error("Save failed", err)
-      alert("Failed to save profile")
+      toast({
+        title: "Save failed",
+        description: "Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
     }
   }
 

@@ -194,14 +194,18 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
           <DropdownMenuTrigger asChild>
             <div className="flex items-center space-x-2 cursor-pointer hover:opacity-80">
               <Avatar className="h-6 w-6">
-                <AvatarImage
-                  src={`/placeholder.svg?height=24&width=24&text=${getInitials(task.assignee)}`}
-                />
-                <AvatarFallback className="text-xs">{getInitials(task.assignee)}</AvatarFallback>
-              </Avatar>
-              <span className="text-xs text-muted-foreground truncate">
-                {task.assignee || "Unassigned"}
-              </span>
+  <AvatarImage
+    src={task.assigneeAvatarUrl || `/placeholder.svg?height=24&width=24&text=${getInitials(task.assignee)}`}
+    alt={task.assignee || "Unassigned"}
+  />
+  <AvatarFallback className="text-xs">
+    {getInitials(task.assignee)}
+  </AvatarFallback>
+</Avatar>
+<span className="text-xs text-muted-foreground truncate">
+  {task.assignee || "Unassigned"}
+</span>
+
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent>

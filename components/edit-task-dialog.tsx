@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { type Task, useDevTrack } from "@/components/devtrack-provider"
+import { toast } from "@/components/ui/use-toast"
 
 interface EditTaskDialogProps {
   open: boolean
@@ -26,6 +27,7 @@ interface EditTaskDialogProps {
 
 export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskDialogProps) {
   const { state } = useDevTrack()
+  const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([])
 
   const [formData, setFormData] = useState({
     title: "",
@@ -38,13 +40,36 @@ export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskD
     githubLink: "",
   })
 
-  // Populate form when editing a task
+  // ✅ Fetch users from API when dialog opens
+  useEffect(() => {
+    if (!open) return
+
+    const fetchUsers = async () => {
+      try {
+        const res = await fetch("/api/users")
+        if (!res.ok) throw new Error("Failed to fetch users")
+        const data = await res.json()
+        setUsers(data) // expect [{id, name, email}]
+      } catch (err) {
+        console.error(err)
+        toast({
+          title: "Error",
+          description: "Failed to load users for assignee dropdown.",
+          variant: "destructive",
+        })
+      }
+    }
+
+    fetchUsers()
+  }, [open])
+
+  // ✅ Populate form with selected task
   useEffect(() => {
     if (task) {
       setFormData({
         title: task.title,
         description: task.description ?? "",
-        assignee: task.assignee,
+        assignee: task.assignee ?? "",
         dueDate: task.dueDate ?? "",
         statusId: task.statusId,
         priority: task.priority,
@@ -62,8 +87,7 @@ export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskD
       ...task,
       title: formData.title,
       description: formData.description || undefined,
-      assignee: formData.assignee,
-      // ✅ Keep as string for frontend
+      assignee: formData.assignee || null,
       dueDate: formData.dueDate || undefined,
       statusId: formData.statusId,
       priority: formData.priority,
@@ -117,17 +141,25 @@ export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskD
             />
           </div>
 
-          {/* Assignee + Due Date */}
+          {/* Assignee Dropdown + Due Date */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="assignee">Assignee</Label>
-              <Input
-                id="assignee"
+              <Select
                 value={formData.assignee}
-                onChange={(e) => setFormData((prev) => ({ ...prev, assignee: e.target.value }))}
-                placeholder="John Doe"
-                required
-              />
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, assignee: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select user" />
+                </SelectTrigger>
+                <SelectContent>
+                  {users.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">

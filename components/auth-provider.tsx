@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState)
   const { toast } = useToast()
 
-  // ✅ Load user from localStorage on mount
+  // Load user from localStorage on mount
   useEffect(() => {
     const storedUser = localStorage.getItem("devtrack_user")
     if (storedUser) {
@@ -70,17 +70,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // ✅ Utility to ensure avatar is always a valid URL
+  // Utility to ensure avatar is always a valid URL
   const withAvatar = (user: User) => {
     return {
       ...user,
-      avatar:
+      avatarUrl:
         user.avatarUrl ||
         `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=0D8ABC&color=fff&size=64`,
     }
   }
 
-  // ✅ Login function
+  // Login function
   const login = async (email: string, password: string): Promise<boolean> => {
     dispatch({ type: "SET_LOADING", payload: true })
 
@@ -123,7 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // ✅ Register function
+  // Register function
   const register = async (email: string, password: string, name: string): Promise<boolean> => {
     dispatch({ type: "SET_LOADING", payload: true })
 
@@ -176,7 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // ✅ Logout function
+  // Logout function
   const logout = () => {
     localStorage.removeItem("devtrack_user")
     localStorage.removeItem("active_project")
@@ -190,14 +190,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
-  // ✅ Update current user info (for profile updates)
+  // Update current user info (for profile updates)
   const setUser = (user: User) => {
     const finalUser = withAvatar(user)
     localStorage.setItem("devtrack_user", JSON.stringify(finalUser))
     dispatch({ type: "SET_USER", payload: finalUser })
   }
 
-  // ✅ Optional: Refresh user from localStorage
+  // Optional: Refresh user from localStorage
   const refreshUser = () => {
     const storedUser = localStorage.getItem("devtrack_user")
     if (storedUser) {

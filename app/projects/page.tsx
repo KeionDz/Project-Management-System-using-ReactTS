@@ -74,29 +74,36 @@ export default function ProjectsPage() {
   }
 
   const handleDeleteProject = async (projectId: string) => {
-    if (state.projects.length <= 1) {
-      toast({
-        title: "Cannot Delete",
-        description: "You must keep at least one project.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    const confirmed = confirm("Are you sure you want to delete this project?")
-    if (!confirmed) return
-
-    try {
-      await deleteProject(projectId) // ✅ provider handles optimistic + rollback
-    } catch (error) {
-      console.error("❌ Delete project failed", error)
-      toast({
-        title: "Error",
-        description: "Failed to delete project.",
-        variant: "destructive",
-      })
-    }
+  if (state.projects.length <= 1) {
+    toast({
+      title: "Cannot Delete",
+      description: "You must keep at least one project.",
+      variant: "destructive",
+    })
+    return
   }
+
+  const confirmed = confirm("Are you sure you want to delete this project?")
+  if (!confirmed) return
+
+  try {
+    await fetch(`/api/projects/${projectId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adminName: user?.name || "An admin" }), // ✅ send admin name
+    })
+
+    await deleteProject(projectId) // ✅ local state update
+  } catch (error) {
+    console.error("❌ Delete project failed", error)
+    toast({
+      title: "Error",
+      description: "Failed to delete project.",
+      variant: "destructive",
+    })
+  }
+}
+
 
   const handleCreateProject = async (projectData: Partial<Project>) => {
     if (!user || user.role !== "ADMIN") {
