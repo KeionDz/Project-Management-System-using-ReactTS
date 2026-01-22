@@ -4,8 +4,21 @@ import { useEffect, useState } from "react"
 import type { Task } from "@/components/devtrack-provider"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Calendar, GitPullRequest, ExternalLink, MoreHorizontal, Trash2, GripVertical, Pencil } from "lucide-react"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  Calendar,
+  GitPullRequest,
+  ExternalLink,
+  MoreHorizontal,
+  Trash2,
+  GripVertical,
+  Pencil,
+} from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useDevTrack } from "@/components/devtrack-provider"
 import type { DraggableAttributes } from "@dnd-kit/core"
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities"
@@ -17,7 +30,10 @@ interface User {
   id: string
   name: string
   email: string
+  avatarUrl?: string | null
 }
+
+/* ---------- helpers ---------- */
 
 const getPriorityColor = (priority: Task["priority"]) => {
   switch (priority) {
@@ -30,12 +46,31 @@ const getPriorityColor = (priority: Task["priority"]) => {
   }
 }
 
-const getInitials = (name: string) =>
+const getInitials = (name?: string) =>
   name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
+    ? name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+    : "?"
+
+// 🔥 SAME LOGIC AS navigation.tsx
+const resolveAvatarSrc = (user?: User) => {
+  if (user?.avatarUrl?.startsWith("data:image")) {
+    return user.avatarUrl
+  }
+
+  if (user?.avatarUrl) {
+    return user.avatarUrl
+  }
+
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(
+    user?.name || "U"
+  )}&background=0D8ABC&color=fff&size=64`
+}
+
+/* ---------- props ---------- */
 
 interface TaskCardProps {
   task: Task
@@ -45,11 +80,19 @@ interface TaskCardProps {
   className?: string
 }
 
-export function TaskCard({ task, onEdit, attributes, listeners, className }: TaskCardProps) {
+/* ---------- component ---------- */
+
+export function TaskCard({
+  task,
+  onEdit,
+  attributes,
+  listeners,
+  className,
+}: TaskCardProps) {
   const { deleteTask } = useDevTrack()
   const [users, setUsers] = useState<User[]>([])
 
-  // Fetch users for dropdown
+  /* Fetch users */
   useEffect(() => {
     const fetchUsers = async () => {
       try {
@@ -64,7 +107,12 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
     fetchUsers()
   }, [])
 
-  // Update assignee
+  /* Find assigned user safely */
+  const assignedUser = users.find(
+    (u) => u.name?.toLowerCase() === task.assignee?.toLowerCase()
+  )
+
+  /* Update assignee */
   const handleAssign = async (user: User) => {
     try {
       await fetch(`/api/tasks/${task.id}`, {
@@ -72,7 +120,8 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ assignee: user.name }),
       })
-      onEdit({ ...task, assignee: user.name }) // Update local UI
+
+      onEdit({ ...task, assignee: user.name })
     } catch (err) {
       console.error("❌ Failed to update assignee", err)
     }
@@ -89,14 +138,17 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
       <CardHeader className="p-0 mb-2">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0 pr-2">
-            <h3 className="font-semibold text-sm leading-tight line-clamp-1">{task.title}</h3>
+            <h3 className="font-semibold text-sm leading-tight line-clamp-1">
+              {task.title}
+            </h3>
             {task.description && (
-              <p className="text-xs text-muted-foreground line-clamp-2">{task.description}</p>
+              <p className="text-xs text-muted-foreground line-clamp-2">
+                {task.description}
+              </p>
             )}
           </div>
 
           <div className="flex items-center space-x-1 shrink-0">
-            {/* Drag Handle */}
             <Button
               variant="ghost"
               size="icon"
@@ -108,7 +160,6 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
               <GripVertical className="h-3 w-3" />
             </Button>
 
-            {/* Task Options */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -145,7 +196,6 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
       </CardHeader>
 
       <CardContent className="p-0 space-y-2">
-        {/* Tags */}
         {task.tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {task.tags.map((tag) => (
@@ -156,7 +206,6 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
           </div>
         )}
 
-        {/* Priority + Due Date */}
         <div className="flex items-center justify-between text-xs">
           <Badge className={cn("px-2 py-0.5", getPriorityColor(task.priority))}>
             {task.priority.toUpperCase()}
@@ -169,7 +218,6 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
           )}
         </div>
 
-        {/* GitHub Link */}
         {task.githubLink && (
           <div className="flex items-center justify-between p-2 bg-muted/50 rounded-lg">
             <div className="flex items-center space-x-2">
@@ -189,18 +237,21 @@ export function TaskCard({ task, onEdit, attributes, listeners, className }: Tas
           </div>
         )}
 
-        {/* Assignee Dropdown */}
+        {/* ✅ FIXED ASSIGNEE AVATAR */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <div className="flex items-center space-x-2 cursor-pointer hover:opacity-80">
               <Avatar className="h-6 w-6">
                 <AvatarImage
-                  src={`/placeholder.svg?height=24&width=24&text=${getInitials(task.assignee)}`}
+                  src={resolveAvatarSrc(assignedUser)}
+                  alt={assignedUser?.name || "Unassigned"}
                 />
-                <AvatarFallback className="text-xs">{getInitials(task.assignee)}</AvatarFallback>
+                <AvatarFallback className="text-xs font-medium">
+                  {getInitials(assignedUser?.name)}
+                </AvatarFallback>
               </Avatar>
               <span className="text-xs text-muted-foreground truncate">
-                {task.assignee || "Unassigned"}
+                {assignedUser?.name || "Unassigned"}
               </span>
             </div>
           </DropdownMenuTrigger>

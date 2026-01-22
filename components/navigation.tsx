@@ -43,9 +43,9 @@ export function Navigation() {
   }, [pathname])
 
   // ✅ Handle avatar logic
-  const avatarSrc = state.user?.avatar?.startsWith("data:image")
-    ? state.user.avatar // base64 from DB
-    : state.user?.avatar || // full URL from DB
+  const avatarSrc = state.user?.avatarUrl?.startsWith("data:image")
+    ? state.user.avatarUrl // base64 from DB
+    : state.user?.avatarUrl || // full URL from DB
       `https://ui-avatars.com/api/?name=${encodeURIComponent(
         state.user?.name || "U"
       )}&background=0D8ABC&color=fff&size=64`
