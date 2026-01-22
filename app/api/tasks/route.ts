@@ -5,9 +5,6 @@ import { pusherServer } from "@/lib/pusher"
 // -----------------------
 // GET: Fetch tasks by projectId
 // -----------------------
-// -----------------------
-// GET: Fetch tasks by projectId (with assignee avatar)
-// -----------------------
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
@@ -15,35 +12,17 @@ export async function GET(req: NextRequest) {
 
     if (!projectId) return NextResponse.json([])
 
-    // Fetch tasks with their assignee relation
     const tasks = await prisma.task.findMany({
       where: { projectId },
       orderBy: { order: "asc" },
-      include: {
-        // assuming your Task model has assigneeId -> User relation
-        assigneeUser: {
-          select: {
-            name: true,
-            avatarUrl: true,
-          },
-        },
-      },
     })
 
-    // Map tasks to include assignee name + avatar
-    const tasksWithAvatar = tasks.map((t) => ({
-      ...t,
-      assignee: t.assigneeUser?.name || null,
-      assigneeAvatarUrl: t.assigneeUser?.avatarUrl || null,
-    }))
-
-    return NextResponse.json(tasksWithAvatar)
+    return NextResponse.json(tasks)
   } catch (err) {
     console.error("Error fetching tasks:", err)
     return NextResponse.json([], { status: 500 })
   }
 }
-
 
 // -----------------------
 // POST: Create task
@@ -146,4 +125,3 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Failed to delete task" }, { status: 500 })
   }
 }
-

@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     // ✅ Include role for AuthProvider
     const user = await prisma.user.findUnique({
       where: { email },
-      select: { id: true, name: true, email: true, password: true, role: true, avatarUrl: true },
+      select: { id: true, name: true, email: true, password: true, role: true },
     })
 
     if (!user) {
@@ -42,8 +42,7 @@ export async function POST(req: Request) {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role,
-        avatarUrl: user.avatarUrl, // ✅ Fallback to USER if somehow null
+        role: user.role, // ✅ Fallback to USER if somehow null
       },
     })
   } catch (error) {

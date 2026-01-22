@@ -32,37 +32,12 @@ interface AddTaskDialogProps {
 export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
   const { state } = useDevTrack()
   const [loading, setLoading] = useState(false)
-  const [users, setUsers] = useState<{ id: string; name: string; email: string }[]>([])
 
-  // ✅ Fetch users from your real API when dialog opens
-  useEffect(() => {
-    if (!open) return
-
-    const fetchUsers = async () => {
-      try {
-        const res = await fetch("/api/users")
-        if (!res.ok) throw new Error("Failed to fetch users")
-        const data = await res.json()
-        // Assuming your API returns [{id, name, email}]
-        setUsers(data)
-      } catch (err) {
-        console.error("Error fetching users:", err)
-        toast({
-          title: "Error",
-          description: "Failed to load users for assignee dropdown.",
-          variant: "destructive",
-        })
-      }
-    }
-
-    fetchUsers()
-  }, [open])
-
-  // ✅ Available status columns for active project
+  // ✅ Filter status columns for the current active project
   const availableStatusColumns: StatusColumn[] = useMemo(
     () =>
       state.statusColumns.filter(
-        (col) => col.projectId === state.activeProjectId
+        (col: { projectId: string }) => col.projectId === state.activeProjectId
       ),
     [state.statusColumns, state.activeProjectId]
   )
@@ -78,7 +53,7 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
     githubLink: "",
   })
 
-  // ✅ Reset statusId when dialog opens
+  // ✅ Ensure statusId is always the first column if form resets
   useEffect(() => {
     if (open && availableStatusColumns.length) {
       setFormData((prev) => ({
@@ -107,23 +82,26 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
 
     setLoading(true)
 
-    const tasksInStatus = state.tasks.filter((t) => t.statusId === formData.statusId)
+    // ✅ Calculate order for the selected status column
+    const tasksInStatus = state.tasks.filter(
+      (t: { statusId: string }) => t.statusId === formData.statusId
+    )
     const newOrder = tasksInStatus.length
 
     const newTask = {
       title: formData.title,
       description: formData.description || null,
-      assignee: formData.assignee || null, // store user ID or name based on your backend
+      assignee: formData.assignee,
       dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
       statusId: formData.statusId,
       projectId: state.activeProjectId,
       priority: formData.priority,
       tags: formData.tags
         .split(",")
-        .map((tag) => tag.trim())
+        .map((tag: string) => tag.trim())
         .filter(Boolean),
       githubLink: formData.githubLink || null,
-      order: newOrder,
+      order: newOrder, // ✅ Places at the bottom of the chosen column
     }
 
     try {
@@ -134,7 +112,11 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
       })
 
       if (!res.ok) throw new Error("Failed to create task")
+
       const { task } = await res.json()
+
+      // ✅ Do NOT dispatch ADD_TASK here to avoid duplicates
+      // Pusher will broadcast the new task to all clients including this one
 
       toast({
         title: "Task Created",
@@ -196,25 +178,17 @@ export function AddTaskDialog({ open, onOpenChange }: AddTaskDialogProps) {
             />
           </div>
 
-          {/* Assignee Dropdown + Due Date */}
+          {/* Assignee + Due Date */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="assignee">Assignee</Label>
-              <Select
+              <Input
+                id="assignee"
                 value={formData.assignee}
-                onValueChange={(value) => setFormData((prev) => ({ ...prev, assignee: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select user" />
-                </SelectTrigger>
-                <SelectContent>
-                  {users.map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={(e) => setFormData((prev) => ({ ...prev, assignee: e.target.value }))}
+                placeholder="John Doe"
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="dueDate">Due Date</Label>

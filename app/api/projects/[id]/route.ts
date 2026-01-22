@@ -1,32 +1,33 @@
 import { NextRequest, NextResponse } from "next/server"
 import prisma from "@/lib/db"
 import { pusherServer } from "@/lib/pusher"
+
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
-  const { id } = params
+  const { id } = context.params
 
   try {
-    const { adminName } = await req.json() // 🔹 get admin from client
-
-    // 🔹 Delete child records first
+    // 1️⃣ Delete all tasks for this project
     await prisma.task.deleteMany({ where: { projectId: id } })
+
+    // 2️⃣ Delete all status columns for this project
     await prisma.statusColumn.deleteMany({ where: { projectId: id } })
 
-    // 🔹 Delete project
-    const project = await prisma.project.delete({ where: { id } })
+    // 3️⃣ Delete the project
+    await prisma.project.delete({ where: { id } })
 
-    // 🔹 Notify via Pusher that the project is deleted
-    await pusherServer.trigger("projects", "project-deleted", {
-      projectId: id,
-      adminName: adminName || "An admin",
-      projectName: project.name,
+    // 4️⃣ Broadcast updated projects
+    const projects = await prisma.project.findMany({
+      orderBy: { createdAt: "desc" },
     })
+
+    await pusherServer.trigger("projects", "projects-updated", projects)
 
     return NextResponse.json({ success: true })
   } catch (err) {
-    console.error("❌ Failed to delete project:", err)
+    console.error("❌ Failed to delete project", err)
     return NextResponse.json({ error: "Failed to delete project" }, { status: 500 })
   }
 }

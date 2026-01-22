@@ -91,4 +91,3 @@
 .azure-bg-accent {
   @apply bg-[hsl(var(--azure-blue-accent))];
 }
-

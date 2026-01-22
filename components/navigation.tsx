@@ -2,26 +2,53 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Moon, Sun, LayoutDashboard, Zap, FolderKanban, LogOut, Trello, Settings } from "lucide-react"
+import {
+  Moon,
+  Sun,
+  LayoutDashboard,
+  Zap,
+  FolderKanban,
+  LogOut,
+  Trello,
+  Settings,
+} from "lucide-react"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useAuth } from "@/components/auth-provider"
+import { useMemo } from "react"
 
 export function Navigation() {
   const { setTheme, theme } = useTheme()
   const { state, logout } = useAuth()
   const pathname = usePathname()
- const router = useRouter()
-  const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/projects", label: "Projects", icon: FolderKanban }
-]
+  const router = useRouter()
 
- if (pathname.startsWith("/board")) {
-    navItems.push({ href: pathname, label: "Board", icon: Trello }) // Keeps the exact board path
-  }
+  // ✅ Dynamic Navigation Items
+  const navItems = useMemo(() => {
+    const base = [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/projects", label: "Projects", icon: FolderKanban },
+    ]
+    if (pathname.startsWith("/board")) {
+      base.push({ href: pathname, label: "Board", icon: Trello })
+    }
+    return base
+  }, [pathname])
+
+  // ✅ Handle avatar logic
+  const avatarSrc = state.user?.avatar?.startsWith("data:image")
+    ? state.user.avatar // base64 from DB
+    : state.user?.avatar || // full URL from DB
+      `https://ui-avatars.com/api/?name=${encodeURIComponent(
+        state.user?.name || "U"
+      )}&background=0D8ABC&color=fff&size=64`
 
   const handleLogout = () => {
     logout()
@@ -43,7 +70,7 @@ export function Navigation() {
             <span className="text-xl font-bold">Telsys DevTrack</span>
           </Link>
 
-          {/* Navigation Links */}
+          {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-1">
             {navItems.map((item) => {
               const Icon = item.icon
@@ -82,33 +109,53 @@ export function Navigation() {
             {/* Profile Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full hover:bg-white/10">
+                <Button
+                  variant="ghost"
+                  className="relative h-8 w-8 rounded-full hover:bg-white/10"
+                >
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={state.user?.avatarUrl || "/placeholder-user.jpg"} alt={state.user?.name} />
+                    <AvatarImage
+                      src={avatarSrc}
+                      alt={state.user?.name || "User"}
+                      onError={(e) => {
+                        // fallback if image fails to load
+                        e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                          state.user?.name || "U"
+                        )}&background=0D8ABC&color=fff&size=64`
+                      }}
+                    />
                     <AvatarFallback className="bg-white/20 text-white">
                       {state.user?.name?.charAt(0).toUpperCase() || "U"}
                     </AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
+
               <DropdownMenuContent className="w-56" align="end" forceMount>
                 <div className="flex items-center justify-start gap-2 p-2">
                   <div className="flex flex-col space-y-1 leading-none">
                     <p className="font-medium">{state.user?.name}</p>
-                    <p className="w-[200px] truncate text-sm text-muted-foreground">{state.user?.email}</p>
-                                        <p className="w-[200px] truncate text-sm text-muted-foreground">{state.user?.role}</p>
-
+                    <p className="w-[200px] truncate text-sm text-muted-foreground">
+                      {state.user?.email}
+                    </p>
+                    <p className="w-[200px] truncate text-sm text-muted-foreground">
+                      {state.user?.role}
+                    </p>
                   </div>
                 </div>
-                <DropdownMenuItem
-  className="flex items-center"
-  onClick={() => router.push("/settings")}
->
-  <Settings className="mr-2 h-4 w-4" />
-  <span>Settings</span>
-</DropdownMenuItem>
 
-                <DropdownMenuItem onClick={handleLogout} className="text-red-600 dark:text-red-400">
+                <DropdownMenuItem
+                  className="flex items-center"
+                  onClick={() => router.push("/settings")}
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Settings</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem
+                  onClick={handleLogout}
+                  className="text-red-600 dark:text-red-400"
+                >
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>Sign out</span>
                 </DropdownMenuItem>
@@ -129,7 +176,9 @@ export function Navigation() {
                 key={item.href}
                 href={item.href}
                 className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  isActive ? "bg-white/20 text-white" : "text-white/80 hover:text-white hover:bg-white/10"
+                  isActive
+                    ? "bg-white/20 text-white"
+                    : "text-white/80 hover:text-white hover:bg-white/10"
                 }`}
               >
                 <Icon className="h-4 w-4" />
