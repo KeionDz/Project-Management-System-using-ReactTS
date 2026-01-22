@@ -248,7 +248,7 @@ useEffect(() => {
     <ProtectedRoute>
       <div className="min-h-screen bg-background">
         <Navigation />
-        <main className="max-w-7xl mx-auto p-6">
+        <main className="w-full p-6">
           {isLoading ? (
             <div className="flex items-center justify-center py-32">
               <div className="text-center">

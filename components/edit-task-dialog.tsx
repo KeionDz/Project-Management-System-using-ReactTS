@@ -86,7 +86,7 @@ export function EditTaskDialog({ open, onOpenChange, task, onUpdate }: EditTaskD
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[800px]">
         <DialogHeader>
           <DialogTitle>Edit Task</DialogTitle>
           <DialogDescription>Make changes to your task here.</DialogDescription>
